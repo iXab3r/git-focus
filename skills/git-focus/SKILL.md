@@ -33,7 +33,13 @@ Use `git-focus` as the authority for sparse-checkout state. Do not edit sparse p
    git-focus <path/to/Cargo.toml>
    ```
 
-5. Report any refusal caused by dirty paths. Never stash, commit, clean, or force-deinitialize a submodule merely to make focus succeed.
+5. A dirty repository must fail before sparse checkout begins. Report the changed paths and stop. Use `--force` only when the user explicitly authorizes overriding this fail-safe:
+
+   ```text
+   git-focus <path/to/Cargo.toml> --force
+   ```
+
+   Never stash, commit, clean, or force-deinitialize a submodule merely to make focus succeed.
 
 ## Verify work
 

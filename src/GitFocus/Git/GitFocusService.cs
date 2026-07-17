@@ -57,7 +57,10 @@ public sealed class GitFocusService
             repositoryPlans));
     }
 
-    public async Task ApplyAsync(GitSparsePlan plan, CancellationToken cancellationToken = default)
+    public async Task ApplyAsync(
+        GitSparsePlan plan,
+        bool force,
+        CancellationToken cancellationToken = default)
     {
         if (await IsFocusedAsync(plan.PrimaryRepositoryRoot, cancellationToken).ConfigureAwait(false))
         {
@@ -65,9 +68,12 @@ public sealed class GitFocusService
                 "This repository is already focused. Run `git-focus full` before selecting another input.");
         }
 
-        foreach (var repository in plan.Repositories)
+        if (!force)
         {
-            await EnsureNoHiddenChangesAsync(repository, cancellationToken).ConfigureAwait(false);
+            foreach (var repository in plan.Repositories)
+            {
+                await EnsureCleanWorkingTreeAsync(repository.RepositoryRoot, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         var applied = new List<RepositorySparsePlan>();
@@ -153,29 +159,38 @@ public sealed class GitFocusService
                 state.Repositories);
     }
 
-    private async Task EnsureNoHiddenChangesAsync(
-        RepositorySparsePlan plan,
-        CancellationToken cancellationToken)
+    public async Task EnsureCleanAsync(
+        string repositoryPath,
+        bool force,
+        CancellationToken cancellationToken = default)
     {
-        if (plan.IncludeWholeRepository)
+        if (force)
         {
             return;
         }
 
+        var repositoryRoot = FindRepositoryRootLexically(Path.GetFullPath(repositoryPath));
+        await EnsureCleanWorkingTreeAsync(repositoryRoot, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task EnsureCleanWorkingTreeAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken)
+    {
         var status = await git.RunAsync(
-            plan.RepositoryRoot,
-            ["status", "--porcelain=v1", "-z", "--untracked-files=no"],
+            repositoryRoot,
+            ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
             cancellationToken).ConfigureAwait(false);
-        var hidden = ParseStatusPaths(status)
-            .Where(path => !IsVisibleInCone(path, plan.IncludedPaths))
+        var changes = ParseStatusPaths(status)
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
             .ToArray();
-        if (hidden.Length > 0)
+        if (changes.Length > 0)
         {
             throw new InvalidOperationException(
-                $"Focus would hide modified tracked paths in `{plan.RepositoryRoot}`:{Environment.NewLine}" +
-                string.Join(Environment.NewLine, hidden.Select(path => $"  {path}")));
+                $"Repository `{repositoryRoot}` contains uncommitted changes. " +
+                $"Commit or stash them before focusing, or pass `--force` to override:{Environment.NewLine}" +
+                string.Join(Environment.NewLine, changes.Select(path => $"  {path}")));
         }
     }
 
@@ -272,21 +287,6 @@ public sealed class GitFocusService
         var result = value[position..end];
         position = Math.Min(end + 1, value.Length);
         return result;
-    }
-
-    private static bool IsVisibleInCone(string dirtyPath, IReadOnlyList<string> includedPaths)
-    {
-        var normalized = NormalizeGitPath(dirtyPath);
-        if (includedPaths.Any(included =>
-                normalized.Equals(included, StringComparison.Ordinal) ||
-                normalized.StartsWith(included + "/", StringComparison.Ordinal)))
-        {
-            return true;
-        }
-
-        var parent = NormalizeGitPath(Path.GetDirectoryName(normalized) ?? string.Empty);
-        return includedPaths.Any(included =>
-            parent.Length == 0 || included.StartsWith(parent + "/", StringComparison.Ordinal));
     }
 
     private static void AddPath(

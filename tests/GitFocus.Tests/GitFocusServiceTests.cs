@@ -16,7 +16,7 @@ public sealed class GitFocusServiceTests
         Write(temporary.Path, "local-notes.txt", "untracked\n");
 
         var plan = await service.PlanAsync(selection, input, temporary.Path, CancellationToken.None);
-        await service.ApplyAsync(plan, CancellationToken.None);
+        await service.ApplyAsync(plan, force: true, cancellationToken: CancellationToken.None);
 
         Assert.False(Directory.Exists(System.IO.Path.Combine(temporary.Path, "src", "Other")));
         Assert.True(File.Exists(System.IO.Path.Combine(temporary.Path, "target", "cache.bin")));
@@ -34,7 +34,7 @@ public sealed class GitFocusServiceTests
     }
 
     [Fact]
-    public async Task RefusesToHideDirtyPaths()
+    public async Task RefusesDirtyTrackedPathsByDefault()
     {
         using var temporary = CreateRepository();
         File.AppendAllText(System.IO.Path.Combine(temporary.Path, "src", "Other", "source.txt"), "dirty\n");
@@ -47,10 +47,52 @@ public sealed class GitFocusServiceTests
             CancellationToken.None);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            service.ApplyAsync(plan, CancellationToken.None));
+            service.ApplyAsync(plan, force: false, cancellationToken: CancellationToken.None));
 
         Assert.Contains("src/Other/source.txt", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("--force", exception.Message, StringComparison.Ordinal);
         Assert.True(Directory.Exists(System.IO.Path.Combine(temporary.Path, "src", "Other")));
+    }
+
+    [Fact]
+    public async Task RefusesUntrackedPathsByDefault()
+    {
+        using var temporary = CreateRepository();
+        Write(temporary.Path, "local-notes.txt", "untracked\n");
+        var service = new GitFocusService();
+        var input = System.IO.Path.Combine(temporary.Path, "src", "App", "Cargo.toml");
+        var plan = await service.PlanAsync(
+            CreateSelection(temporary.Path),
+            input,
+            temporary.Path,
+            CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.ApplyAsync(plan, force: false, cancellationToken: CancellationToken.None));
+
+        Assert.Contains("local-notes.txt", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("--force", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RefusesStagedPathsByDefault()
+    {
+        using var temporary = CreateRepository();
+        Write(temporary.Path, "staged-notes.txt", "staged\n");
+        RunGit(temporary.Path, "add", "staged-notes.txt");
+        var service = new GitFocusService();
+        var input = System.IO.Path.Combine(temporary.Path, "src", "App", "Cargo.toml");
+        var plan = await service.PlanAsync(
+            CreateSelection(temporary.Path),
+            input,
+            temporary.Path,
+            CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.ApplyAsync(plan, force: false, cancellationToken: CancellationToken.None));
+
+        Assert.Contains("staged-notes.txt", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("--force", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

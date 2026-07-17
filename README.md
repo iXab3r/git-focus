@@ -8,12 +8,15 @@ The executable is also a Git extension, so `git-focus ...` and `git focus ...` a
 
 ```text
 git-focus path/to/Cargo.toml
+git-focus path/to/Cargo.toml --force
 git-focus plan path/to/Cargo.toml
 git-focus status --repo path/to/repository
 git-focus full --repo path/to/repository
 ```
 
-The default command resolves the input project, computes its transitive local dependency closure, checks that no modified tracked path would be hidden, and applies cone-mode sparse checkout recursively to the repository containing the current directory and any nested repositories. Use `--repo` to choose a different explicit repository boundary. Untracked files, local symlinks, and ignored build caches remain in place.
+The default command resolves the input project, computes its transitive local dependency closure, and requires every repository in the plan to have a clean working tree before it runs any sparse-checkout command. This includes staged, modified, and untracked files. Pass `--force` to bypass that fail-safe explicitly.
+
+Focus applies cone-mode sparse checkout recursively to the repository containing the current directory and any nested repositories. Use `--repo` to choose a different explicit repository boundary. When forced, untracked files, local symlinks, and ignored build caches remain in place.
 
 `full` restores every repository recorded by the last focus operation. It does not fetch, pull, update submodule commits, or clean ignored files such as `target/`.
 

@@ -14,7 +14,7 @@
 - Keep dependency planning independent of Git mutation.
 - Use `CliWrap` for external processes and `System.CommandLine` for the CLI.
 - Never remove ignored build caches such as `target/`, `bin/`, or `obj/` when changing focus.
-- Refuse unsafe focus changes when modified tracked files would be hidden. Sparse checkout leaves untracked and ignored files intact.
+- Fail before applying sparse checkout if any planned repository has staged, modified, or untracked files. Only an explicit `--force` bypasses this gate.
 
 ## Verification
 

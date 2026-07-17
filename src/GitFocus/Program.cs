@@ -17,6 +17,10 @@ var withoutDevOption = new Option<bool>("--without-dev")
 {
     Description = "Exclude development-only local dependencies.",
 };
+var forceOption = new Option<bool>("--force")
+{
+    Description = "Allow focusing repositories that contain uncommitted changes.",
+};
 var focusRepositoryOption = new Option<string>("--repo")
 {
     Description = "Primary repository boundary. Defaults to the repository containing the current directory.",
@@ -28,6 +32,7 @@ var root = new RootCommand("Focus a Git monorepo to one project and its local de
     inputArgument,
     typeOption,
     withoutDevOption,
+    forceOption,
     focusRepositoryOption,
 };
 root.SetAction(async (parseResult, cancellationToken) =>
@@ -41,13 +46,16 @@ root.SetAction(async (parseResult, cancellationToken) =>
 
     return await ExecuteAsync(async services =>
     {
+        var repository = parseResult.GetRequiredValue(focusRepositoryOption);
+        var force = parseResult.GetValue(forceOption);
+        await services.Git.EnsureCleanAsync(repository, force, cancellationToken).ConfigureAwait(false);
+
         var request = CreateRequest(parseResult, input, typeOption, withoutDevOption);
         var selection = await services.Planner.PlanAsync(request, cancellationToken).ConfigureAwait(false);
-        var repository = parseResult.GetRequiredValue(focusRepositoryOption);
         var plan = await services.Git.PlanAsync(selection, request.FullInputPath, repository, cancellationToken)
             .ConfigureAwait(false);
         PrintPlan(plan);
-        await services.Git.ApplyAsync(plan, cancellationToken).ConfigureAwait(false);
+        await services.Git.ApplyAsync(plan, force, cancellationToken).ConfigureAwait(false);
         Console.WriteLine("Focused successfully. Run `git-focus full` before selecting another input.");
     }).ConfigureAwait(false);
 });
