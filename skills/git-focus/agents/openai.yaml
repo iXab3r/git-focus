@@ -1,0 +1,4 @@
+interface:
+  display_name: "Git Focus"
+  short_description: "Focus monorepos to relevant dependency source"
+  default_prompt: "Use $git-focus to narrow this repository to the project and local dependency closure needed for the task."

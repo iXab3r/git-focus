@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/GitFocus/GitFocus.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/GitFocus.Tests/GitFocus.Tests.csproj" />
+  </Folder>
+</Solution>
