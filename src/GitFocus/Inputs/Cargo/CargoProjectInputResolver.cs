@@ -69,11 +69,12 @@ public sealed class CargoProjectInputResolver : IProjectInputResolver
         var rootPackage = FindRootPackage(request.FullInputPath, localPackages.Values);
         var sourceDirectories = localPackages.Values.ToDictionary(
             package => package.Id,
-            package => new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                Path.GetDirectoryName(Path.GetFullPath(package.ManifestPath))!,
-            },
+            package => CreateSourceDirectories(package.ManifestPath),
             StringComparer.Ordinal);
+
+        var requestedDirectory = Path.GetDirectoryName(request.FullInputPath)!;
+        sourceDirectories[rootPackage.Id].Add(requestedDirectory);
+        sourceDirectories[rootPackage.Id].Add(ResolveDirectoryLink(requestedDirectory));
 
         AddDeclaredPathAliases(localPackages, sourceDirectories);
 
@@ -100,6 +101,16 @@ public sealed class CargoProjectInputResolver : IProjectInputResolver
         }
 
         return new ProjectGraph(Kind, rootPackage.Id, nodes);
+    }
+
+    private static HashSet<string> CreateSourceDirectories(string manifestPath)
+    {
+        var manifestDirectory = Path.GetDirectoryName(Path.GetFullPath(manifestPath))!;
+        return new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            manifestDirectory,
+            ResolveDirectoryLink(manifestDirectory),
+        };
     }
 
     private static CargoPackage FindRootPackage(string manifestPath, IEnumerable<CargoPackage> packages)
