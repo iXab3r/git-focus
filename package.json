@@ -1,0 +1,41 @@
+{
+  "name": "git-focus",
+  "version": "0.1.0",
+  "description": "Dependency-aware sparse checkout for focused monorepo work.",
+  "type": "module",
+  "bin": {
+    "git-focus": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    ".agents/skills/git-focus"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup src/cli.ts --format esm --clean --sourcemap",
+    "prepare": "npm run build",
+    "postinstall": "node dist/cli.js install-skill --automatic",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "git",
+    "sparse-checkout",
+    "monorepo",
+    "cargo"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^14.0.0",
+    "execa": "^9.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  }
+}

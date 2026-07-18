@@ -4,6 +4,22 @@
 
 The executable is also a Git extension, so `git-focus ...` and `git focus ...` are equivalent when it is on `PATH`.
 
+## Install
+
+```text
+npm i -g git-focus
+```
+
+From a local clone:
+
+```text
+npm install -g <path-to-git-focus-repository>
+```
+
+The global installation adds the CLI to `PATH` and installs the bundled Agent Skill under `$HOME/.agents/skills/git-focus`. Run `git-focus install-skill` to repair or refresh the skill manually. Start a new agent task or restart the agent host if it does not notice the new skill immediately.
+
+Set `GIT_FOCUS_SKIP_SKILL_INSTALL=1` to install only the CLI. Requires Node.js 20+.
+
 ## Commands
 
 ```text
@@ -13,6 +29,7 @@ git-focus plan path/to/Cargo.toml
 git-focus status --repo path/to/repository
 git-focus full --repo path/to/repository
 ```
+git-focus install-skill
 
 The default command resolves the input project, computes its transitive local dependency closure, and requires every repository in the plan to have a clean working tree before it runs any sparse-checkout command. This includes staged, modified, and untracked files. Pass `--force` to bypass that fail-safe explicitly.
 
@@ -22,14 +39,13 @@ Focus applies cone-mode sparse checkout recursively to the repository containing
 
 ## Input adapters
 
-Framework discovery is isolated behind `IProjectInputResolver`. The initial Cargo adapter uses `cargo metadata`; a future MSBuild adapter can produce the same framework-neutral graph without changing Git application or CLI orchestration.
+Framework discovery is isolated behind project input resolvers. The initial Cargo adapter uses `cargo metadata`; a future MSBuild adapter can produce the same framework-neutral graph without changing Git application or CLI orchestration.
 
 ## Development
 
-Requires .NET SDK 10.
-
 ```text
-dotnet build --configuration Release
-dotnet test --configuration Release
-dotnet run --project src/GitFocus -- plan /path/to/Cargo.toml
+npm install
+npm test
+npm run build
+node dist/cli.js plan /path/to/Cargo.toml
 ```
