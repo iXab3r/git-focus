@@ -15,7 +15,9 @@ describe("installGitFocusSkill", () => {
         path.join(temporary.path, ".agents", "skills", "git-focus"),
       );
       const skill = await fs.readFile(path.join(target, "SKILL.md"), "utf8");
-      expect(skill).toContain("npm install -g <path-to-git-focus-repository>");
+      expect(skill).toContain(
+        "npm install -g git+https://github.com/iXab3r/git-focus.git",
+      );
     } finally {
       temporary.dispose();
     }

@@ -67,7 +67,7 @@ describe("GitFocusService", () => {
     const input = path.join(temporary.path, "src", "App", "Cargo.toml");
     write(temporary.path, "local-notes.txt", "untracked\n");
 
-    const plan = service.plan(selection, input, temporary.path);
+    const plan = await service.plan(selection, input, temporary.path);
     await service.apply(plan, true);
 
     expect(fs.existsSync(path.join(temporary.path, "src", "Other"))).toBe(false);
@@ -101,7 +101,7 @@ describe("GitFocusService", () => {
     );
     const service = new GitFocusService();
     const input = path.join(temporary.path, "src", "App", "Cargo.toml");
-    const plan = service.plan(
+    const plan = await service.plan(
       createSelection(temporary.path),
       input,
       temporary.path,
@@ -117,7 +117,7 @@ describe("GitFocusService", () => {
     write(temporary.path, "local-notes.txt", "untracked\n");
     const service = new GitFocusService();
     const input = path.join(temporary.path, "src", "App", "Cargo.toml");
-    const plan = service.plan(
+    const plan = await service.plan(
       createSelection(temporary.path),
       input,
       temporary.path,
@@ -133,7 +133,7 @@ describe("GitFocusService", () => {
     runGit(temporary.path, "add", "staged-notes.txt");
     const service = new GitFocusService();
     const input = path.join(temporary.path, "src", "App", "Cargo.toml");
-    const plan = service.plan(
+    const plan = await service.plan(
       createSelection(temporary.path),
       input,
       temporary.path,
@@ -163,7 +163,7 @@ describe("GitFocusService", () => {
       dependencies: [],
     };
 
-    const plan = service.plan(
+    const plan = await service.plan(
       { inputKind: "cargo", root: app, projects: [app] },
       input,
       temporary.path,
@@ -198,7 +198,7 @@ describe("GitFocusService", () => {
       dependencies: [],
     };
 
-    const plan = service.plan(
+    const plan = await service.plan(
       { inputKind: "cargo", root: app, projects: [app] },
       input,
       temporary.path,
@@ -208,5 +208,43 @@ describe("GitFocusService", () => {
       /Nested.*already uses sparse checkout/,
     );
     expect(fs.existsSync(path.join(temporary.path, "src", "Other"))).toBe(true);
+  });
+  it("reloads the whitelist for every plan and preserves matching tracked directories", async () => {
+    const temporary = createRepository();
+    const service = new GitFocusService();
+    const selection = createSelection(temporary.path);
+    const input = path.join(temporary.path, "src", "App", "Cargo.toml");
+    write(
+      temporary.path,
+      ".gitignore-focus-whitelist",
+      "# Keep shared sources visible.\n/src/Other/\n",
+    );
+
+    const whitelistedPlan = await service.plan(
+      selection,
+      input,
+      temporary.path,
+    );
+    expect(whitelistedPlan.repositories[0]!.whitelistedPaths).toEqual([
+      "src/Other",
+    ]);
+    expect(whitelistedPlan.repositories[0]!.includedPaths).toContain(
+      "src/Other",
+    );
+
+    await service.apply(whitelistedPlan, true);
+    expect(fs.existsSync(path.join(temporary.path, "src", "Other"))).toBe(true);
+    await service.restoreFull(temporary.path);
+
+    write(
+      temporary.path,
+      ".gitignore-focus-whitelist",
+      "/does-not-exist/\n",
+    );
+    const reloadedPlan = await service.plan(selection, input, temporary.path);
+    expect(reloadedPlan.repositories[0]!.whitelistedPaths).toEqual([]);
+    expect(reloadedPlan.repositories[0]!.includedPaths).not.toContain(
+      "src/Other",
+    );
   });
 });

@@ -10,14 +10,15 @@ Use `git-focus` as the authority for sparse-checkout state. Do not edit sparse p
 ## Ensure availability
 
 1. Run `git-focus --help`.
-2. If the command is unavailable, locate the git-focus source repository supplied by the user or workspace and install it globally:
+2. If the command is unavailable, install the CLI from the git-focus GitHub repository, then install its bundled skill:
 
    ```text
-   npm install -g <path-to-git-focus-repository>
+   npm install -g git+https://github.com/iXab3r/git-focus.git
+   git-focus install-skill
    ```
 
    Do not substitute an npm registry package unless the user identifies it as the intended source.
-3. A global installation also installs this skill for the current user. If the CLI works but the user skill is missing, repair it with:
+3. If the CLI works but the user skill is missing or stale, install or refresh it with:
 
    ```text
    git-focus install-skill
@@ -27,10 +28,11 @@ Use `git-focus` as the authority for sparse-checkout state. Do not edit sparse p
 
 ## Focus a task
 
-1. Check the current state:
+1. Check the current state and repository preserve rules:
 
    ```text
    git-focus status --repo <repository>
+   git-focus whitelist show --repo <repository>
    ```
 
 2. If another focus is active, restore full visibility first:
@@ -39,7 +41,7 @@ Use `git-focus` as the authority for sparse-checkout state. Do not edit sparse p
    git-focus full --repo <repository>
    ```
 
-3. Preview the dependency closure:
+3. Preview the dependency closure. Paths marked `[whitelist]` come from the repository-root `.gitignore-focus-whitelist` preserve list:
 
    ```text
    git-focus plan <path/to/Cargo.toml> --repo <repository>
@@ -72,6 +74,7 @@ Run the full gate, then reapply the prior project focus only if more scoped work
 ## Safety
 
 - Treat the printed project and repository plan as the scope receipt.
+- Treat `.gitignore-focus-whitelist` as a preserve/include list layered onto the dependency plan. It uses `.gitignore` syntax and is reloaded for each command. Use `git-focus whitelist match <path> --repo <repository>` to test uncertain paths.
 - Keep ignored caches such as top-level Cargo `target/`; never invoke Git cleanup commands through this skill.
 - Untracked files and local symlinks remain visible because sparse checkout does not own them. Do not delete them to make a focus plan look cleaner.
 - Stop if installation cannot be completed, the requested input adapter is unsupported, Cargo metadata fails, or a local dependency escapes the primary repository.

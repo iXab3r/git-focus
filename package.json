@@ -14,9 +14,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsup src/cli.ts --format esm --clean --sourcemap",
-    "prepare": "npm run build",
-    "postinstall": "node dist/cli.js install-skill --automatic",
+    "bundle": "tsup src/cli.ts --format esm --clean --sourcemap",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -30,7 +28,8 @@
   "license": "MIT",
   "dependencies": {
     "commander": "^14.0.0",
-    "execa": "^9.6.0"
+    "execa": "^9.6.0",
+    "ignore": "^7.0.6"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

@@ -10,6 +10,7 @@ import {
 } from "../paths.js";
 import type { FocusSelection } from "../inputs/types.js";
 import { selectionSourceDirectories } from "../inputs/types.js";
+import { FocusWhitelist } from "../whitelist/focus-whitelist.js";
 import { GitCommandRunner } from "./git-runner.js";
 import type {
   GitFocusState,
@@ -22,16 +23,20 @@ interface MutableRepositoryPlan {
   repositoryRoot: string;
   includeWholeRepository: boolean;
   includedPaths: Set<string>;
+  whitelistedPaths: Set<string>;
 }
 
 export class GitFocusService {
-  private readonly git = new GitCommandRunner();
+  constructor(
+    private readonly git = new GitCommandRunner(),
+    private readonly whitelist = new FocusWhitelist(git),
+  ) {}
 
-  plan(
+  async plan(
     selection: FocusSelection,
     inputPath: string,
     repositoryPath: string,
-  ): GitSparsePlan {
+  ): Promise<GitSparsePlan> {
     const fullInputPath = fullPath(inputPath);
     const primaryRoot = findRepositoryRootLexically(fullPath(repositoryPath));
     if (!isInside(primaryRoot, fullInputPath)) {
@@ -56,6 +61,21 @@ export class GitFocusService {
       this.addNestedRepositoryChain(repositories, primaryRoot, owningRoot);
     }
 
+    for (const repository of [...repositories.values()]) {
+      const whitelistedDirectories =
+        await this.whitelist.matchedTrackedDirectories(
+          repository.repositoryRoot,
+        );
+      for (const directory of whitelistedDirectories) {
+        this.addPath(
+          repositories,
+          repository.repositoryRoot,
+          path.join(repository.repositoryRoot, directory),
+          true,
+        );
+      }
+    }
+
     const repositoryPlans = [...repositories.values()]
       .sort((a, b) => pathDepth(a.repositoryRoot) - pathDepth(b.repositoryRoot))
       .map(
@@ -63,6 +83,9 @@ export class GitFocusService {
           repositoryRoot: plan.repositoryRoot,
           includeWholeRepository: plan.includeWholeRepository,
           includedPaths: [...plan.includedPaths].sort((a, b) =>
+            a.localeCompare(b),
+          ),
+          whitelistedPaths: [...plan.whitelistedPaths].sort((a, b) =>
             a.localeCompare(b),
           ),
         }),
@@ -286,6 +309,7 @@ export class GitFocusService {
     repositories: Map<string, MutableRepositoryPlan>,
     repositoryRoot: string,
     sourceDirectory: string,
+    whitelisted = false,
   ): void {
     const key = repositoryKey(repositoryRoot);
     let plan = repositories.get(key);
@@ -294,6 +318,7 @@ export class GitFocusService {
         repositoryRoot: fullPath(repositoryRoot),
         includeWholeRepository: false,
         includedPaths: new Set(),
+        whitelistedPaths: new Set(),
       };
       repositories.set(key, plan);
     }
@@ -304,7 +329,11 @@ export class GitFocusService {
       return;
     }
 
-    plan.includedPaths.add(normalizeGitPath(relative));
+    const gitPath = normalizeGitPath(relative);
+    plan.includedPaths.add(gitPath);
+    if (whitelisted) {
+      plan.whitelistedPaths.add(gitPath);
+    }
   }
 
   private addNestedRepositoryChain(

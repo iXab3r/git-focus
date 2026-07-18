@@ -1,0 +1,2 @@
+# Keep Rust build output available while the repository is focused.
+/target/

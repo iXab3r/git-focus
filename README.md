@@ -1,51 +1,137 @@
 # git-focus
 
-`git-focus` is a dependency-aware sparse-checkout controller for large Git repositories. It keeps build caches and Git history intact while reducing the source files exposed to editors, search tools, and coding agents.
+`git-focus` reduces a large Git repository to the source needed for one project and its transitive local dependencies. It uses Git sparse checkout, keeps repository history intact, and does not delete ignored build caches.
 
-The executable is also a Git extension, so `git-focus ...` and `git focus ...` are equivalent when it is on `PATH`.
+The executable is also a Git extension: `git-focus ...` and `git focus ...` are equivalent when it is on `PATH`.
 
-## Install
+## Install from GitHub
+
+Requires Node.js 20+.
 
 ```text
-npm i -g git-focus
+npm install -g git+https://github.com/iXab3r/git-focus.git
+git-focus install-skill
 ```
 
-From a local clone:
+Verify the installation:
 
 ```text
-npm install -g <path-to-git-focus-repository>
+git-focus --help
 ```
 
-The global installation adds the CLI to `PATH` and installs the bundled Agent Skill under `$HOME/.agents/skills/git-focus`. Run `git-focus install-skill` to repair or refresh the skill manually. Start a new agent task or restart the agent host if it does not notice the new skill immediately.
+The first command adds the CLI to `PATH`. The second copies the bundled Agent Skill to `$HOME/.agents/skills/git-focus`; rerun it whenever the skill needs to be refreshed.
 
-Set `GIT_FOCUS_SKIP_SKILL_INSTALL=1` to install only the CLI. Requires Node.js 20+.
-
-## Commands
+To install from an existing local clone instead:
 
 ```text
-git-focus path/to/Cargo.toml
-git-focus path/to/Cargo.toml --force
-git-focus plan path/to/Cargo.toml
+npm install -g .
+git-focus install-skill
+```
+
+## What it does
+
+```mermaid
+flowchart LR
+    A["Cargo.toml"] --> B["cargo metadata"]
+    B --> C["Project dependency graph"]
+    C --> D["Target project + transitive local dependencies"]
+    D --> E["Required source directories"]
+    H[".gitignore-focus-whitelist"] --> E
+    E --> F["Git sparse checkout"]
+    F --> G["Focused working tree"]
+```
+
+`git-focus` separates dependency discovery from Git mutation. The language adapter produces a project graph; the planner selects the dependency closure; the Git service converts the selected source directories into sparse-checkout scopes.
+
+Before changing sparse checkout, it verifies that every planned repository is clean. Staged, modified, or untracked files stop the operation unless the user explicitly passes `--force`.
+
+Ignored files such as Cargo `target/` directories remain in place. `git-focus` does not fetch, pull, clean, stash, commit, or update submodule revisions.
+
+## Quick start
+
+Preview the scope for a Rust project:
+
+```text
+git-focus plan path/to/Cargo.toml --repo path/to/repository
+```
+
+Apply it:
+
+```text
+git-focus path/to/Cargo.toml --repo path/to/repository
+```
+
+Inspect or restore the repository:
+
+```text
 git-focus status --repo path/to/repository
 git-focus full --repo path/to/repository
 ```
-git-focus install-skill
 
-The default command resolves the input project, computes its transitive local dependency closure, and requires every repository in the plan to have a clean working tree before it runs any sparse-checkout command. This includes staged, modified, and untracked files. Pass `--force` to bypass that fail-safe explicitly.
+Use `--without-dev` to exclude development-only dependency edges. Use `--force` only when intentionally overriding the clean-working-tree safety gate.
 
-Focus applies cone-mode sparse checkout recursively to the repository containing the current directory and any nested repositories. Use `--repo` to choose a different explicit repository boundary. When forced, untracked files, local symlinks, and ignored build caches remain in place.
+## Whitelist (preserve list)
 
-`full` restores every repository recorded by the last focus operation. It does not fetch, pull, update submodule commits, or clean ignored files such as `target/`.
+The repository-root `.gitignore-focus-whitelist` file contains paths that must remain visible in addition to the selected project dependency closure. It uses normal `.gitignore` syntax: blank lines, comments, anchored paths, directory patterns, globs, escaped leading characters, and `!` negation are supported.
 
-## Input adapters
+The file is read fresh for every plan and whitelist command. You can edit it directly or use:
 
-Framework discovery is isolated behind project input resolvers. The initial Cargo adapter uses `cargo metadata`; a future MSBuild adapter can produce the same framework-neutral graph without changing Git application or CLI orchestration.
+```text
+git-focus whitelist show --repo path/to/repository
+git-focus whitelist add "/docs/" --repo path/to/repository
+git-focus whitelist remove "/docs/" --repo path/to/repository
+git-focus whitelist match docs/guide.md --repo path/to/repository
+```
+
+`add` and `remove` operate on exact lines and retain comments and direct edits. `match` prints `WHITELISTED` or `NOT WHITELISTED`; it exits with status `0` for a match and `1` for no match.
+
+Git cone-mode sparse checkout works at directory scope. When a pattern matches a tracked file, git-focus preserves its containing directory, including sibling files. Ignored and untracked matches already remain on disk because sparse checkout does not own them. The initial Rust policy is:
+
+```gitignore
+# Keep Rust build output available while the repository is focused.
+/target/
+```
+
+The public command and filename use “whitelist” because matching paths are added to the visible set. Conceptually, it is a preserve/include list, not a blacklist: nothing matching it is excluded.
+## Supported languages
+
+| Language | Project input | Dependency source | Status |
+| --- | --- | --- | --- |
+| Rust | `Cargo.toml` | `cargo metadata` | Supported |
+
+Rust is currently the only supported language. The Cargo adapter includes runtime, build, and development path dependencies, target source paths, workspace `.cargo` configuration, and physical source directories behind local links.
+
+## How to add a language
+
+Each language or build ecosystem is implemented as a project-input adapter. Git planning and sparse-checkout mutation remain language-independent.
+
+1. Create `src/inputs/<language>/<language>-resolver.ts`.
+2. Implement `ProjectInputResolver` from `src/inputs/types.ts`:
+   - Give the resolver a unique `kind`, such as `cargo` or `msbuild`.
+   - Implement `canResolve(request)` for automatic input detection.
+   - Implement `resolve(request)` and return a `ProjectGraph` containing a root project and all locally addressable project nodes.
+   - For each `ProjectNode`, include its manifest, every source/configuration directory required to build it, and dependency edges classified as `runtime`, `build`, or `development`.
+   - Preserve both lexical and physical source paths when links or junctions are involved.
+3. Register the resolver in `createServices()` in `src/cli.ts`.
+4. Add resolver tests covering:
+   - automatic and explicit `--type` selection;
+   - transitive dependency closure;
+   - development-dependency filtering;
+   - source paths outside the manifest directory;
+   - links or junctions;
+   - actionable tool and metadata failures.
+5. Add the language to the support table above and update the Agent Skill if its operating instructions change.
+
+The adapter must only describe projects and dependencies. It must not run sparse-checkout commands or mutate Git state.
 
 ## Development
 
 ```text
 npm install
+npm run typecheck
 npm test
-npm run build
+npm run bundle
 node dist/cli.js plan /path/to/Cargo.toml
 ```
+
+`dist/` is committed so installs directly from Git do not need a package lifecycle build. Rebuild it whenever `src/` changes. Keep the developer script named `bundle`: npm treats a `build` script as a Git-dependency build trigger.

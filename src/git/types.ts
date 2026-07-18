@@ -4,6 +4,7 @@ export interface RepositorySparsePlan {
   repositoryRoot: string;
   includeWholeRepository: boolean;
   includedPaths: string[];
+  whitelistedPaths?: string[];
 }
 
 export interface GitSparsePlan {
