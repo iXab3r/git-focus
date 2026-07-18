@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { GitFocusService } from "../src/git/git-focus-service.js";
+import { GitCommandRunner } from "../src/git/git-runner.js";
+import { FocusWhitelist } from "../src/whitelist/focus-whitelist.js";
 import type { FocusSelection } from "../src/inputs/types.js";
 import {
   TemporaryDirectory,
@@ -35,6 +37,16 @@ function createRepository(): TemporaryDirectory {
   return temporary;
 }
 
+function createService(): GitFocusService {
+  const userHome = new TemporaryDirectory();
+  temps.push(userHome);
+  const git = new GitCommandRunner();
+  return new GitFocusService(
+    git,
+    new FocusWhitelist(git, userHome.path),
+  );
+}
+
 function createSelection(root: string): FocusSelection {
   const appManifest = path.join(root, "src", "App", "Cargo.toml");
   const libManifest = path.join(root, "src", "Lib", "Cargo.toml");
@@ -62,7 +74,7 @@ function createSelection(root: string): FocusSelection {
 describe("GitFocusService", () => {
   it("focus and full round trip preserve ignored build cache", async () => {
     const temporary = createRepository();
-    const service = new GitFocusService();
+    const service = createService();
     const selection = createSelection(temporary.path);
     const input = path.join(temporary.path, "src", "App", "Cargo.toml");
     write(temporary.path, "local-notes.txt", "untracked\n");
@@ -99,7 +111,7 @@ describe("GitFocusService", () => {
       path.join(temporary.path, "src", "Other", "source.txt"),
       "dirty\n",
     );
-    const service = new GitFocusService();
+    const service = createService();
     const input = path.join(temporary.path, "src", "App", "Cargo.toml");
     const plan = await service.plan(
       createSelection(temporary.path),
@@ -115,7 +127,7 @@ describe("GitFocusService", () => {
   it("refuses untracked paths by default", async () => {
     const temporary = createRepository();
     write(temporary.path, "local-notes.txt", "untracked\n");
-    const service = new GitFocusService();
+    const service = createService();
     const input = path.join(temporary.path, "src", "App", "Cargo.toml");
     const plan = await service.plan(
       createSelection(temporary.path),
@@ -131,7 +143,7 @@ describe("GitFocusService", () => {
     const temporary = createRepository();
     write(temporary.path, "staged-notes.txt", "staged\n");
     runGit(temporary.path, "add", "staged-notes.txt");
-    const service = new GitFocusService();
+    const service = createService();
     const input = path.join(temporary.path, "src", "App", "Cargo.toml");
     const plan = await service.plan(
       createSelection(temporary.path),
@@ -153,7 +165,7 @@ describe("GitFocusService", () => {
     );
     write(nestedRoot, "src/App/source.txt", "nested\n");
     runGit(nestedRoot, "init");
-    const service = new GitFocusService();
+    const service = createService();
     const input = path.join(nestedRoot, "src", "App", "Cargo.toml");
     const app = {
       id: "nested-app",
@@ -188,7 +200,7 @@ describe("GitFocusService", () => {
     write(nestedRoot, "src/App/source.txt", "nested\n");
     runGit(nestedRoot, "init");
     runGit(nestedRoot, "config", "core.sparseCheckout", "true");
-    const service = new GitFocusService();
+    const service = createService();
     const input = path.join(nestedRoot, "src", "App", "Cargo.toml");
     const app = {
       id: "nested-app",
@@ -211,7 +223,7 @@ describe("GitFocusService", () => {
   });
   it("reloads the whitelist for every plan and preserves matching tracked directories", async () => {
     const temporary = createRepository();
-    const service = new GitFocusService();
+    const service = createService();
     const selection = createSelection(temporary.path);
     const input = path.join(temporary.path, "src", "App", "Cargo.toml");
     write(

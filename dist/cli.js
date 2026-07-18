@@ -426,6 +426,7 @@ import path5 from "path";
 
 // src/whitelist/focus-whitelist.ts
 import fs4 from "fs/promises";
+import os2 from "os";
 import path4 from "path";
 import ignore from "ignore";
 
@@ -469,47 +470,86 @@ Repository: ${repositoryRoot}`
 
 // src/whitelist/focus-whitelist.ts
 var FOCUS_WHITELIST_FILE = ".gitignore-focus-whitelist";
+var DEFAULT_USER_WHITELIST = `# Keep Rust build output available while repositories are focused.
+/target/
+
+# Keep repository-level AI instructions, skills, and configuration visible.
+/.agents/
+/.claude/
+/.codex/
+/.continue/
+/.cursor/
+/.gemini/
+/.github/
+/.windsurf/
+`;
 var FocusWhitelist = class {
-  constructor(git = new GitCommandRunner()) {
+  constructor(git = new GitCommandRunner(), userHome = os2.homedir()) {
     this.git = git;
+    this.userHome = userHome;
   }
   git;
+  userHome;
   repositoryRoot(repositoryPath) {
     return findRepositoryRootLexically(fullPath(repositoryPath));
   }
-  filePath(repositoryPath) {
+  filePath(repositoryPath, scope = "workspace") {
+    if (scope === "user") {
+      return path4.join(this.userHome, FOCUS_WHITELIST_FILE);
+    }
     return path4.join(this.repositoryRoot(repositoryPath), FOCUS_WHITELIST_FILE);
   }
-  async read(repositoryPath) {
+  async read(repositoryPath, scope = "workspace") {
     try {
-      return await fs4.readFile(this.filePath(repositoryPath), "utf8");
+      return await fs4.readFile(this.filePath(repositoryPath, scope), "utf8");
     } catch (error) {
       if (error.code === "ENOENT") {
-        return "";
+        return scope === "user" ? DEFAULT_USER_WHITELIST : "";
       }
       throw error;
     }
   }
-  async add(repositoryPath, pattern) {
+  async effective(repositoryPath) {
+    const user = await this.read(repositoryPath, "user");
+    const workspace = await this.read(repositoryPath, "workspace");
+    return joinWhitelistSources(user, workspace);
+  }
+  async ensureUserWhitelist() {
+    const filePath = this.filePath(this.userHome, "user");
+    await fs4.mkdir(path4.dirname(filePath), { recursive: true });
+    try {
+      await fs4.writeFile(filePath, DEFAULT_USER_WHITELIST, {
+        encoding: "utf8",
+        flag: "wx"
+      });
+      return { filePath, created: true };
+    } catch (error) {
+      if (error.code === "EEXIST") {
+        return { filePath, created: false };
+      }
+      throw error;
+    }
+  }
+  async add(repositoryPath, pattern, scope = "workspace") {
     validatePattern(pattern);
-    const current = await this.read(repositoryPath);
+    const current = await this.read(repositoryPath, scope);
     const lines = splitLines(current);
     if (lines.includes(pattern)) {
       return false;
     }
     lines.push(pattern);
-    await this.write(repositoryPath, lines);
+    await this.write(repositoryPath, lines, scope);
     return true;
   }
-  async remove(repositoryPath, pattern) {
+  async remove(repositoryPath, pattern, scope = "workspace") {
     validatePattern(pattern);
-    const current = await this.read(repositoryPath);
+    const current = await this.read(repositoryPath, scope);
     const lines = splitLines(current);
     const remaining = lines.filter((line) => line !== pattern);
     if (remaining.length === lines.length) {
       return false;
     }
-    await this.write(repositoryPath, remaining);
+    await this.write(repositoryPath, remaining, scope);
     return true;
   }
   async match(repositoryPath, candidatePath) {
@@ -563,15 +603,21 @@ var FocusWhitelist = class {
     return minimizeDirectories([...directories]);
   }
   async matcher(repositoryPath) {
-    return ignore().add(await this.read(repositoryPath));
+    return ignore().add(await this.read(repositoryPath, "user")).add(await this.read(repositoryPath, "workspace"));
   }
-  async write(repositoryPath, lines) {
-    const filePath = this.filePath(repositoryPath);
+  async write(repositoryPath, lines, scope) {
+    const filePath = this.filePath(repositoryPath, scope);
+    await fs4.mkdir(path4.dirname(filePath), { recursive: true });
     const contents = lines.length > 0 ? `${lines.join("\n")}
 ` : "";
     await fs4.writeFile(filePath, contents, "utf8");
   }
 };
+function joinWhitelistSources(user, workspace) {
+  const parts = [user.trimEnd(), workspace.trimEnd()].filter(Boolean);
+  return parts.length > 0 ? `${parts.join("\n\n")}
+` : "";
+}
 function normalizeCandidate(repositoryRoot, candidatePath) {
   const fullCandidate = path4.isAbsolute(candidatePath) ? fullPath(candidatePath) : fullPath(path4.join(repositoryRoot, candidatePath));
   if (!isInside(repositoryRoot, fullCandidate)) {
@@ -945,6 +991,20 @@ function createServices() {
     whitelist
   };
 }
+function parseWhitelistFileScope(value) {
+  if (value === "user" || value === "workspace") {
+    return value;
+  }
+  throw new Error(
+    `Unknown whitelist scope \`${value}\`. Available scopes: user, workspace.`
+  );
+}
+function parseWhitelistShowScope(value) {
+  if (value === "effective") {
+    return value;
+  }
+  return parseWhitelistFileScope(value);
+}
 function printPlan(plan) {
   console.log(`Input type: ${plan.inputKind}`);
   console.log(`Root project: ${plan.rootProject.name}`);
@@ -1068,26 +1128,74 @@ program.command("status").description("Show the active git-focus state.").action
   process.exitCode = code;
 });
 var whitelistCommand = program.command("whitelist").description("Manage repository paths preserved during focus.");
-whitelistCommand.command("show").description("Print the repository whitelist in .gitignore format.").action(async () => {
+whitelistCommand.command("show").description("Print the effective, user, or workspace whitelist.").option(
+  "--scope <scope>",
+  "Whitelist scope: effective, user, or workspace.",
+  "effective"
+).action(async (options) => {
   const code = await run(async (services) => {
-    process.stdout.write(await services.whitelist.read(program.opts().repo));
+    const scope = parseWhitelistShowScope(options.scope);
+    if (scope !== "effective") {
+      process.stdout.write(
+        await services.whitelist.read(program.opts().repo, scope)
+      );
+      return;
+    }
+    for (const fileScope of ["user", "workspace"]) {
+      const filePath = services.whitelist.filePath(
+        program.opts().repo,
+        fileScope
+      );
+      console.log(`# ${fileScope} whitelist: ${filePath}`);
+      const contents = await services.whitelist.read(
+        program.opts().repo,
+        fileScope
+      );
+      if (contents !== "") {
+        process.stdout.write(contents);
+      }
+      if (fileScope === "user") {
+        console.log();
+      }
+    }
   });
   process.exitCode = code;
 });
-whitelistCommand.command("add").description("Add an exact pattern to the repository whitelist.").argument("<pattern>", "A .gitignore-style pattern.").action(async (pattern) => {
+whitelistCommand.command("add").description("Add an exact pattern to the user or workspace whitelist.").argument("<pattern>", "A .gitignore-style pattern.").option(
+  "--scope <scope>",
+  "Whitelist file to edit: user or workspace.",
+  "workspace"
+).action(async (pattern, options) => {
   const code = await run(async (services) => {
-    const added = await services.whitelist.add(program.opts().repo, pattern);
-    console.log(added ? `Added: ${pattern}` : `Already present: ${pattern}`);
+    const scope = parseWhitelistFileScope(options.scope);
+    const added = await services.whitelist.add(
+      program.opts().repo,
+      pattern,
+      scope
+    );
+    const filePath = services.whitelist.filePath(program.opts().repo, scope);
+    console.log(
+      `${added ? "Added" : "Already present"} in ${scope} whitelist (${filePath}): ${pattern}`
+    );
   });
   process.exitCode = code;
 });
-whitelistCommand.command("remove").description("Remove an exact pattern from the repository whitelist.").argument("<pattern>", "The exact pattern to remove.").action(async (pattern) => {
+whitelistCommand.command("remove").description("Remove an exact pattern from the user or workspace whitelist.").argument("<pattern>", "The exact pattern to remove.").option(
+  "--scope <scope>",
+  "Whitelist file to edit: user or workspace.",
+  "workspace"
+).action(async (pattern, options) => {
   const code = await run(async (services) => {
+    const scope = parseWhitelistFileScope(options.scope);
     const removed = await services.whitelist.remove(
       program.opts().repo,
-      pattern
+      pattern,
+      scope
     );
-    console.log(removed ? `Removed: ${pattern}` : `Not present: ${pattern}`);
+    const filePath = services.whitelist.filePath(program.opts().repo, scope);
+    console.log(
+      `${removed ? "Removed" : "Not present"} in ${scope} whitelist (${filePath}): ${pattern}`
+    );
   });
   process.exitCode = code;
 });
@@ -1106,9 +1214,13 @@ whitelistCommand.command("match").description("Test whether a repository-relativ
   process.exitCode = code !== 0 ? code : matched ? 0 : 1;
 });
 program.command("install-skill").description("Install the git-focus Agent Skill for the current user.").action(async () => {
-  const code = await run(async () => {
+  const code = await run(async (services) => {
     const target = await installGitFocusSkill();
+    const userWhitelist = await services.whitelist.ensureUserWhitelist();
     console.log(`Installed git-focus Agent Skill to ${target}`);
+    console.log(
+      `${userWhitelist.created ? "Installed default" : "Kept existing"} user whitelist at ${userWhitelist.filePath}`
+    );
   });
   process.exitCode = code;
 });

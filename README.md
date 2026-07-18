@@ -25,7 +25,7 @@ Verify the installation:
 git-focus --help
 ```
 
-The first command adds the CLI to `PATH`. The second copies the bundled Agent Skill to `$HOME/.agents/skills/git-focus`; rerun it whenever the skill needs to be refreshed.
+The first command adds the CLI to `PATH`. The second copies the bundled Agent Skill to `$HOME/.agents/skills/git-focus` and creates the default user whitelist at `$HOME/.gitignore-focus-whitelist` if it does not already exist. Existing user rules are never overwritten.
 
 To install from an existing local clone instead:
 
@@ -42,7 +42,8 @@ flowchart LR
     B --> C["Project dependency graph"]
     C --> D["Target project + transitive local dependencies"]
     D --> E["Required source directories"]
-    H[".gitignore-focus-whitelist"] --> E
+    U["User whitelist"] --> E
+    W["Workspace whitelist"] --> E
     E --> F["Git sparse checkout"]
     F --> G["Focused working tree"]
 ```
@@ -78,23 +79,36 @@ Use `--without-dev` to exclude development-only dependency edges. Use `--force` 
 
 ## Whitelist (preserve list)
 
-The repository-root `.gitignore-focus-whitelist` file contains paths that must remain visible in addition to the selected project dependency closure. It uses normal `.gitignore` syntax: blank lines, comments, anchored paths, directory patterns, globs, escaped leading characters, and `!` negation are supported.
+`git-focus` merges two `.gitignore`-format preserve lists for every plan:
 
-The file is read fresh for every plan and whitelist command. You can edit it directly or use:
+1. The user whitelist at `$HOME/.gitignore-focus-whitelist` applies to every repository. The standard `git-focus install-skill` step creates it with the defaults below if it is missing.
+2. The optional workspace whitelist at `<repository>/.gitignore-focus-whitelist` applies only to that repository. It loads after the user whitelist, so workspace `!` rules can override user defaults.
+
+Both files are read fresh for every plan and whitelist command. Blank lines, comments, anchored paths, directory patterns, globs, escaped leading characters, and `!` negation are supported.
+
+Inspect the effective merged policy or one file:
 
 ```text
 git-focus whitelist show --repo path/to/repository
-git-focus whitelist add "/docs/" --repo path/to/repository
-git-focus whitelist remove "/docs/" --repo path/to/repository
-git-focus whitelist match docs/guide.md --repo path/to/repository
+git-focus whitelist show --scope user --repo path/to/repository
+git-focus whitelist show --scope workspace --repo path/to/repository
 ```
 
-`add` and `remove` operate on exact lines and retain comments and direct edits. `match` prints `WHITELISTED` or `NOT WHITELISTED`; it exits with status `0` for a match and `1` for no match.
+Edit the workspace whitelist by default, or select user scope explicitly:
 
-Git cone-mode sparse checkout works at directory scope. When a pattern matches a tracked file, git-focus preserves its containing directory, including sibling files. Ignored and untracked matches already remain on disk because sparse checkout does not own them. The recommended Rust policy keeps common AI context visible:
+```text
+git-focus whitelist add "/shared/" --repo path/to/repository
+git-focus whitelist remove "/shared/" --repo path/to/repository
+git-focus whitelist add "/personal-tools/" --scope user --repo path/to/repository
+git-focus whitelist match shared/file.txt --repo path/to/repository
+```
+
+`add` and `remove` operate on exact lines and retain comments and direct edits. A workspace edit creates or changes a repository file, so commit it before focusing unless `--force` is explicitly intended. `match` always uses the effective merged policy; it exits with status `0` for a match and `1` for no match.
+
+The shipped user defaults are:
 
 ```gitignore
-# Keep Rust build output available while the repository is focused.
+# Keep Rust build output available while repositories are focused.
 /target/
 
 # Keep repository-level AI instructions, skills, and configuration visible.
@@ -108,9 +122,9 @@ Git cone-mode sparse checkout works at directory scope. When a pattern matches a
 /.windsurf/
 ```
 
-Git cone mode already keeps files at the repository root visible, including `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, and `LICENSE`. They do not need explicit whitelist entries. Broad `/docs/`, `/tools/`, and `/scripts/` directories are intentionally excluded by default because they can describe unrelated or obsolete subsystems. Add only the specific supporting paths that a focused project requires.
+Git cone mode already keeps files at the repository root visible, including `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, and `LICENSE`. Broad `/docs/`, `/tools/`, and `/scripts/` directories are intentionally excluded by default because they can describe unrelated or obsolete subsystems.
 
-The public command and filename use “whitelist” because matching paths are added to the visible set. Conceptually, it is a preserve/include list, not a blacklist: nothing matching it is excluded.
+When a pattern matches a tracked file, cone-mode sparse checkout preserves its containing directory, including sibling files. Ignored and untracked matches already remain on disk because sparse checkout does not own them. The public command and filename retain “whitelist”; conceptually, both files are preserve/include lists.
 
 ## Supported languages
 

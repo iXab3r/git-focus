@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import ignore, { type Ignore } from "ignore";
 import { GitCommandRunner } from "../git/git-runner.js";
@@ -11,6 +12,27 @@ import {
 
 export const FOCUS_WHITELIST_FILE = ".gitignore-focus-whitelist";
 
+export const DEFAULT_USER_WHITELIST = `# Keep Rust build output available while repositories are focused.
+/target/
+
+# Keep repository-level AI instructions, skills, and configuration visible.
+/.agents/
+/.claude/
+/.codex/
+/.continue/
+/.cursor/
+/.gemini/
+/.github/
+/.windsurf/
+`;
+
+export type WhitelistFileScope = "user" | "workspace";
+
+export interface UserWhitelistInstallResult {
+  filePath: string;
+  created: boolean;
+}
+
 export interface WhitelistMatch {
   repositoryRoot: string;
   relativePath: string;
@@ -18,48 +40,91 @@ export interface WhitelistMatch {
 }
 
 export class FocusWhitelist {
-  constructor(private readonly git = new GitCommandRunner()) {}
+  constructor(
+    private readonly git = new GitCommandRunner(),
+    private readonly userHome = os.homedir(),
+  ) {}
 
   repositoryRoot(repositoryPath: string): string {
     return findRepositoryRootLexically(fullPath(repositoryPath));
   }
 
-  filePath(repositoryPath: string): string {
+  filePath(
+    repositoryPath: string,
+    scope: WhitelistFileScope = "workspace",
+  ): string {
+    if (scope === "user") {
+      return path.join(this.userHome, FOCUS_WHITELIST_FILE);
+    }
     return path.join(this.repositoryRoot(repositoryPath), FOCUS_WHITELIST_FILE);
   }
 
-  async read(repositoryPath: string): Promise<string> {
+  async read(
+    repositoryPath: string,
+    scope: WhitelistFileScope = "workspace",
+  ): Promise<string> {
     try {
-      return await fs.readFile(this.filePath(repositoryPath), "utf8");
+      return await fs.readFile(this.filePath(repositoryPath, scope), "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        return "";
+        return scope === "user" ? DEFAULT_USER_WHITELIST : "";
       }
       throw error;
     }
   }
 
-  async add(repositoryPath: string, pattern: string): Promise<boolean> {
+  async effective(repositoryPath: string): Promise<string> {
+    const user = await this.read(repositoryPath, "user");
+    const workspace = await this.read(repositoryPath, "workspace");
+    return joinWhitelistSources(user, workspace);
+  }
+
+  async ensureUserWhitelist(): Promise<UserWhitelistInstallResult> {
+    const filePath = this.filePath(this.userHome, "user");
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    try {
+      await fs.writeFile(filePath, DEFAULT_USER_WHITELIST, {
+        encoding: "utf8",
+        flag: "wx",
+      });
+      return { filePath, created: true };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+        return { filePath, created: false };
+      }
+      throw error;
+    }
+  }
+
+  async add(
+    repositoryPath: string,
+    pattern: string,
+    scope: WhitelistFileScope = "workspace",
+  ): Promise<boolean> {
     validatePattern(pattern);
-    const current = await this.read(repositoryPath);
+    const current = await this.read(repositoryPath, scope);
     const lines = splitLines(current);
     if (lines.includes(pattern)) {
       return false;
     }
     lines.push(pattern);
-    await this.write(repositoryPath, lines);
+    await this.write(repositoryPath, lines, scope);
     return true;
   }
 
-  async remove(repositoryPath: string, pattern: string): Promise<boolean> {
+  async remove(
+    repositoryPath: string,
+    pattern: string,
+    scope: WhitelistFileScope = "workspace",
+  ): Promise<boolean> {
     validatePattern(pattern);
-    const current = await this.read(repositoryPath);
+    const current = await this.read(repositoryPath, scope);
     const lines = splitLines(current);
     const remaining = lines.filter((line) => line !== pattern);
     if (remaining.length === lines.length) {
       return false;
     }
-    await this.write(repositoryPath, remaining);
+    await this.write(repositoryPath, remaining, scope);
     return true;
   }
 
@@ -124,14 +189,26 @@ export class FocusWhitelist {
   }
 
   private async matcher(repositoryPath: string): Promise<Ignore> {
-    return ignore().add(await this.read(repositoryPath));
+    return ignore()
+      .add(await this.read(repositoryPath, "user"))
+      .add(await this.read(repositoryPath, "workspace"));
   }
 
-  private async write(repositoryPath: string, lines: string[]): Promise<void> {
-    const filePath = this.filePath(repositoryPath);
+  private async write(
+    repositoryPath: string,
+    lines: string[],
+    scope: WhitelistFileScope,
+  ): Promise<void> {
+    const filePath = this.filePath(repositoryPath, scope);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
     const contents = lines.length > 0 ? `${lines.join("\n")}\n` : "";
     await fs.writeFile(filePath, contents, "utf8");
   }
+}
+
+function joinWhitelistSources(user: string, workspace: string): string {
+  const parts = [user.trimEnd(), workspace.trimEnd()].filter(Boolean);
+  return parts.length > 0 ? `${parts.join("\n\n")}\n` : "";
 }
 
 function normalizeCandidate(

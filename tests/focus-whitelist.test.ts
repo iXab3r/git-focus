@@ -1,6 +1,7 @@
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  DEFAULT_USER_WHITELIST,
   FOCUS_WHITELIST_FILE,
   FocusWhitelist,
 } from "../src/whitelist/focus-whitelist.js";
@@ -17,6 +18,18 @@ afterEach(() => {
     temps.pop()!.dispose();
   }
 });
+
+function createWhitelist(): {
+  whitelist: FocusWhitelist;
+  userHome: TemporaryDirectory;
+} {
+  const userHome = new TemporaryDirectory();
+  temps.push(userHome);
+  return {
+    whitelist: new FocusWhitelist(undefined, userHome.path),
+    userHome,
+  };
+}
 
 function createRepository(): TemporaryDirectory {
   const temporary = new TemporaryDirectory();
@@ -46,9 +59,47 @@ function createRepository(): TemporaryDirectory {
 }
 
 describe("FocusWhitelist", () => {
+  it("layers default user rules under workspace overrides", async () => {
+    const temporary = createRepository();
+    const { whitelist } = createWhitelist();
+
+    await expect(
+      whitelist.read(temporary.path, "user"),
+    ).resolves.toBe(DEFAULT_USER_WHITELIST);
+    await expect(
+      whitelist.match(temporary.path, ".agents/skills/example/SKILL.md"),
+    ).resolves.toMatchObject({ matched: true });
+
+    await whitelist.add(temporary.path, "!/.agents/", "workspace");
+
+    await expect(
+      whitelist.match(temporary.path, ".agents/skills/example/SKILL.md"),
+    ).resolves.toMatchObject({ matched: false });
+    const effective = await whitelist.effective(temporary.path);
+    expect(effective.indexOf("/.agents/")).toBeLessThan(
+      effective.indexOf("!/.agents/"),
+    );
+  });
+
+  it("installs the default user whitelist once without overwriting edits", async () => {
+    const temporary = createRepository();
+    const { whitelist } = createWhitelist();
+
+    await expect(whitelist.ensureUserWhitelist()).resolves.toMatchObject({
+      created: true,
+    });
+    await whitelist.add(temporary.path, "/personal/", "user");
+    await expect(whitelist.ensureUserWhitelist()).resolves.toMatchObject({
+      created: false,
+    });
+    await expect(whitelist.read(temporary.path, "user")).resolves.toContain(
+      "/personal/",
+    );
+  });
+
   it("matches gitignore syntax and resolves tracked directories", async () => {
     const temporary = createRepository();
-    const whitelist = new FocusWhitelist();
+    const { whitelist } = createWhitelist();
 
     await expect(
       whitelist.match(temporary.path, "target/cache.bin"),
@@ -69,7 +120,7 @@ describe("FocusWhitelist", () => {
 
   it("adds and removes exact patterns while retaining direct edits", async () => {
     const temporary = createRepository();
-    const whitelist = new FocusWhitelist();
+    const { whitelist } = createWhitelist();
 
     await expect(whitelist.add(temporary.path, "/generated/")).resolves.toBe(
       true,

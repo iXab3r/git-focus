@@ -11,7 +11,10 @@ import { FocusPlanner } from "./planning/focus-planner.js";
 import { GitFocusService } from "./git/git-focus-service.js";
 import { GitCommandRunner } from "./git/git-runner.js";
 import type { GitSparsePlan } from "./git/types.js";
-import { FocusWhitelist } from "./whitelist/focus-whitelist.js";
+import {
+  FocusWhitelist,
+  type WhitelistFileScope,
+} from "./whitelist/focus-whitelist.js";
 
 function createServices() {
   const resolvers = [new CargoProjectInputResolver()];
@@ -22,6 +25,24 @@ function createServices() {
     git: new GitFocusService(gitRunner, whitelist),
     whitelist,
   };
+}
+
+type WhitelistShowScope = WhitelistFileScope | "effective";
+
+function parseWhitelistFileScope(value: string): WhitelistFileScope {
+  if (value === "user" || value === "workspace") {
+    return value;
+  }
+  throw new Error(
+    `Unknown whitelist scope \`${value}\`. Available scopes: user, workspace.`,
+  );
+}
+
+function parseWhitelistShowScope(value: string): WhitelistShowScope {
+  if (value === "effective") {
+    return value;
+  }
+  return parseWhitelistFileScope(value);
 }
 
 function printPlan(plan: GitSparsePlan): void {
@@ -180,37 +201,89 @@ const whitelistCommand = program
 
 whitelistCommand
   .command("show")
-  .description("Print the repository whitelist in .gitignore format.")
-  .action(async () => {
+  .description("Print the effective, user, or workspace whitelist.")
+  .option(
+    "--scope <scope>",
+    "Whitelist scope: effective, user, or workspace.",
+    "effective",
+  )
+  .action(async (options: { scope: string }) => {
     const code = await run(async (services) => {
-      process.stdout.write(await services.whitelist.read(program.opts().repo));
+      const scope = parseWhitelistShowScope(options.scope);
+      if (scope !== "effective") {
+        process.stdout.write(
+          await services.whitelist.read(program.opts().repo, scope),
+        );
+        return;
+      }
+
+      for (const fileScope of ["user", "workspace"] as const) {
+        const filePath = services.whitelist.filePath(
+          program.opts().repo,
+          fileScope,
+        );
+        console.log(`# ${fileScope} whitelist: ${filePath}`);
+        const contents = await services.whitelist.read(
+          program.opts().repo,
+          fileScope,
+        );
+        if (contents !== "") {
+          process.stdout.write(contents);
+        }
+        if (fileScope === "user") {
+          console.log();
+        }
+      }
     });
     process.exitCode = code;
   });
 
 whitelistCommand
   .command("add")
-  .description("Add an exact pattern to the repository whitelist.")
+  .description("Add an exact pattern to the user or workspace whitelist.")
   .argument("<pattern>", "A .gitignore-style pattern.")
-  .action(async (pattern: string) => {
+  .option(
+    "--scope <scope>",
+    "Whitelist file to edit: user or workspace.",
+    "workspace",
+  )
+  .action(async (pattern: string, options: { scope: string }) => {
     const code = await run(async (services) => {
-      const added = await services.whitelist.add(program.opts().repo, pattern);
-      console.log(added ? `Added: ${pattern}` : `Already present: ${pattern}`);
+      const scope = parseWhitelistFileScope(options.scope);
+      const added = await services.whitelist.add(
+        program.opts().repo,
+        pattern,
+        scope,
+      );
+      const filePath = services.whitelist.filePath(program.opts().repo, scope);
+      console.log(
+        `${added ? "Added" : "Already present"} in ${scope} whitelist (${filePath}): ${pattern}`,
+      );
     });
     process.exitCode = code;
   });
 
 whitelistCommand
   .command("remove")
-  .description("Remove an exact pattern from the repository whitelist.")
+  .description("Remove an exact pattern from the user or workspace whitelist.")
   .argument("<pattern>", "The exact pattern to remove.")
-  .action(async (pattern: string) => {
+  .option(
+    "--scope <scope>",
+    "Whitelist file to edit: user or workspace.",
+    "workspace",
+  )
+  .action(async (pattern: string, options: { scope: string }) => {
     const code = await run(async (services) => {
+      const scope = parseWhitelistFileScope(options.scope);
       const removed = await services.whitelist.remove(
         program.opts().repo,
         pattern,
+        scope,
       );
-      console.log(removed ? `Removed: ${pattern}` : `Not present: ${pattern}`);
+      const filePath = services.whitelist.filePath(program.opts().repo, scope);
+      console.log(
+        `${removed ? "Removed" : "Not present"} in ${scope} whitelist (${filePath}): ${pattern}`,
+      );
     });
     process.exitCode = code;
   });
@@ -238,9 +311,13 @@ program
   .command("install-skill")
   .description("Install the git-focus Agent Skill for the current user.")
   .action(async () => {
-    const code = await run(async () => {
+    const code = await run(async (services) => {
       const target = await installGitFocusSkill();
+      const userWhitelist = await services.whitelist.ensureUserWhitelist();
       console.log(`Installed git-focus Agent Skill to ${target}`);
+      console.log(
+        `${userWhitelist.created ? "Installed default" : "Kept existing"} user whitelist at ${userWhitelist.filePath}`,
+      );
     });
     process.exitCode = code;
   });
