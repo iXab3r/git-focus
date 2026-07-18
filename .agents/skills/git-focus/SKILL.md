@@ -75,6 +75,7 @@ Run the full gate, then reapply the prior project focus only if more scoped work
 
 - Treat the printed project and repository plan as the scope receipt.
 - Treat `.gitignore-focus-whitelist` as a preserve/include list layered onto the dependency plan. It uses `.gitignore` syntax and is reloaded for each command. Use `git-focus whitelist match <path> --repo <repository>` to test uncertain paths.
+- Confirm that repository-level AI context directories such as `.agents`, `.claude`, `.codex`, `.cursor`, and `.github`, plus repository-wide `docs`, `tools`, and `scripts`, are preserved. Repository-root instruction and contribution files remain visible automatically in Git cone mode.
 - Keep ignored caches such as top-level Cargo `target/`; never invoke Git cleanup commands through this skill.
 - Untracked files and local symlinks remain visible because sparse checkout does not own them. Do not delete them to make a focus plan look cleaner.
 - Stop if installation cannot be completed, the requested input adapter is unsupported, Cargo metadata fails, or a local dependency escapes the primary repository.

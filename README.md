@@ -1,8 +1,14 @@
 # git-focus
 
-`git-focus` reduces a large Git repository to the source needed for one project and its transitive local dependencies. It uses Git sparse checkout, keeps repository history intact, and does not delete ignored build caches.
+Large monorepos slow AI coding tools down: searches surface unrelated projects, and agents spend limited context understanding surrounding code instead of the task at hand. `git-focus` narrows the visible working tree to one project and its transitive local dependencies, making tools faster and reducing wasted context.
+
+It uses Git sparse checkout, keeps repository history intact, and does not delete ignored build caches.
 
 The executable is also a Git extension: `git-focus ...` and `git focus ...` are equivalent when it is on `PATH`.
+
+![A full Rust monorepo becoming a focused working tree containing the selected project, its local dependency, and a preserved target cache](docs/assets/sparse-checkout-focus.svg)
+
+Green marks the selected project, blue marks source pulled in through local dependencies, and gold marks paths retained by `.gitignore-focus-whitelist`. Faded paths are hidden from the working tree, not deleted; switching back to full mode makes them visible again.
 
 ## Install from GitHub
 
@@ -85,14 +91,32 @@ git-focus whitelist match docs/guide.md --repo path/to/repository
 
 `add` and `remove` operate on exact lines and retain comments and direct edits. `match` prints `WHITELISTED` or `NOT WHITELISTED`; it exits with status `0` for a match and `1` for no match.
 
-Git cone-mode sparse checkout works at directory scope. When a pattern matches a tracked file, git-focus preserves its containing directory, including sibling files. Ignored and untracked matches already remain on disk because sparse checkout does not own them. The initial Rust policy is:
+Git cone-mode sparse checkout works at directory scope. When a pattern matches a tracked file, git-focus preserves its containing directory, including sibling files. Ignored and untracked matches already remain on disk because sparse checkout does not own them. The recommended Rust policy also keeps common AI context and repository-wide support directories visible:
 
 ```gitignore
 # Keep Rust build output available while the repository is focused.
 /target/
+
+# Keep repository-level AI instructions, skills, and configuration visible.
+/.agents/
+/.claude/
+/.codex/
+/.continue/
+/.cursor/
+/.gemini/
+/.github/
+/.windsurf/
+
+# Keep repository documentation and automation available.
+/docs/
+/tools/
+/scripts/
 ```
 
+Git cone mode already keeps files at the repository root visible, including `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, and `LICENSE`. They do not need explicit whitelist entries. The directory defaults are editable: remove any broad path that is unusually large for a repository, or add other repository-wide context that its agents and contributors require.
+
 The public command and filename use “whitelist” because matching paths are added to the visible set. Conceptually, it is a preserve/include list, not a blacklist: nothing matching it is excluded.
+
 ## Supported languages
 
 | Language | Project input | Dependency source | Status |
