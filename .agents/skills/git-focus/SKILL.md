@@ -1,11 +1,20 @@
 ---
 name: git-focus
-description: Install and use the git-focus CLI to narrow a large Git monorepo to one Cargo project and its transitive local dependency source. Use when a user asks to use git-focus, when unrelated projects would pollute agent context, or when switching between focused and full source visibility while retaining ignored build caches.
+description: Install and use the git-focus CLI to narrow a large Git monorepo to one Cargo project and its transitive local dependency source. In a focused checkout, unrelated tracked paths are intentionally absent—not deleted—so check focus state before concluding that files, directories, or subsystems do not exist.
 ---
 
 # Git Focus
 
 Use `git-focus` as the authority for sparse-checkout state. Do not edit sparse patterns manually.
+
+## Recognize a focused checkout
+
+A focused repository is deliberately incomplete as a working tree. Git history still contains tracked paths hidden by sparse checkout.
+
+1. Run `git-focus status --repo <repository>` before concluding that a referenced file, directory, or subsystem does not exist.
+2. When the mode is `focused`, do not recreate, replace, or rewrite a missing path merely because it is absent from the working tree.
+3. Use `git-focus full --repo <repository>` before repository-wide discovery, architectural analysis, or work that requires hidden areas.
+4. Treat documentation outside the focused project as unavailable context, not evidence that the documented subsystem should be recreated.
 
 ## Ensure availability
 
@@ -75,7 +84,7 @@ Run the full gate, then reapply the prior project focus only if more scoped work
 
 - Treat the printed project and repository plan as the scope receipt.
 - Treat `.gitignore-focus-whitelist` as a preserve/include list layered onto the dependency plan. It uses `.gitignore` syntax and is reloaded for each command. Use `git-focus whitelist match <path> --repo <repository>` to test uncertain paths.
-- Confirm that repository-level AI context directories such as `.agents`, `.claude`, `.codex`, `.cursor`, and `.github`, plus repository-wide `docs`, `tools`, and `scripts`, are preserved. Repository-root instruction and contribution files remain visible automatically in Git cone mode.
+- Confirm that repository-level AI context directories such as `.agents`, `.claude`, `.codex`, `.cursor`, and `.github` are preserved. Repository-root instruction and contribution files remain visible automatically in Git cone mode.
 - Keep ignored caches such as top-level Cargo `target/`; never invoke Git cleanup commands through this skill.
 - Untracked files and local symlinks remain visible because sparse checkout does not own them. Do not delete them to make a focus plan look cleaner.
 - Stop if installation cannot be completed, the requested input adapter is unsupported, Cargo metadata fails, or a local dependency escapes the primary repository.

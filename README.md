@@ -8,7 +8,7 @@ The executable is also a Git extension: `git-focus ...` and `git focus ...` are 
 
 ![A full Rust monorepo becoming a focused working tree containing the selected project, its local dependency, and a preserved target cache](docs/assets/sparse-checkout-focus.svg)
 
-Green marks the selected project, blue marks source pulled in through local dependencies, and gold marks paths retained by `.gitignore-focus-whitelist`. Faded paths are hidden from the working tree, not deleted; switching back to full mode makes them visible again.
+Green marks the selected project, blue marks source pulled in through local dependencies, and gold marks AI context and cache paths retained by `.gitignore-focus-whitelist`. Faded paths are hidden from the working tree, not deleted; switching back to full mode makes them visible again.
 
 ## Install from GitHub
 
@@ -91,7 +91,7 @@ git-focus whitelist match docs/guide.md --repo path/to/repository
 
 `add` and `remove` operate on exact lines and retain comments and direct edits. `match` prints `WHITELISTED` or `NOT WHITELISTED`; it exits with status `0` for a match and `1` for no match.
 
-Git cone-mode sparse checkout works at directory scope. When a pattern matches a tracked file, git-focus preserves its containing directory, including sibling files. Ignored and untracked matches already remain on disk because sparse checkout does not own them. The recommended Rust policy also keeps common AI context and repository-wide support directories visible:
+Git cone-mode sparse checkout works at directory scope. When a pattern matches a tracked file, git-focus preserves its containing directory, including sibling files. Ignored and untracked matches already remain on disk because sparse checkout does not own them. The recommended Rust policy keeps common AI context visible:
 
 ```gitignore
 # Keep Rust build output available while the repository is focused.
@@ -106,14 +106,9 @@ Git cone-mode sparse checkout works at directory scope. When a pattern matches a
 /.gemini/
 /.github/
 /.windsurf/
-
-# Keep repository documentation and automation available.
-/docs/
-/tools/
-/scripts/
 ```
 
-Git cone mode already keeps files at the repository root visible, including `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, and `LICENSE`. They do not need explicit whitelist entries. The directory defaults are editable: remove any broad path that is unusually large for a repository, or add other repository-wide context that its agents and contributors require.
+Git cone mode already keeps files at the repository root visible, including `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, and `LICENSE`. They do not need explicit whitelist entries. Broad `/docs/`, `/tools/`, and `/scripts/` directories are intentionally excluded by default because they can describe unrelated or obsolete subsystems. Add only the specific supporting paths that a focused project requires.
 
 The public command and filename use “whitelist” because matching paths are added to the visible set. Conceptually, it is a preserve/include list, not a blacklist: nothing matching it is excluded.
 

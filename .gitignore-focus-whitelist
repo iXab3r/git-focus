@@ -10,8 +10,3 @@
 /.gemini/
 /.github/
 /.windsurf/
-
-# Keep repository documentation and automation available.
-/docs/
-/tools/
-/scripts/
