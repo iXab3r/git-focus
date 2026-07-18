@@ -3,7 +3,10 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { GitFocusService } from "../src/git/git-focus-service.js";
 import { GitCommandRunner } from "../src/git/git-runner.js";
-import { FocusWhitelist } from "../src/whitelist/focus-whitelist.js";
+import {
+  FOCUS_WHITELIST_FILE,
+  FocusWhitelist,
+} from "../src/whitelist/focus-whitelist.js";
 import type { FocusSelection } from "../src/inputs/types.js";
 import {
   TemporaryDirectory,
@@ -38,12 +41,10 @@ function createRepository(): TemporaryDirectory {
 }
 
 function createService(): GitFocusService {
-  const userHome = new TemporaryDirectory();
-  temps.push(userHome);
   const git = new GitCommandRunner();
   return new GitFocusService(
     git,
-    new FocusWhitelist(git, userHome.path),
+    new FocusWhitelist(git, path.resolve(FOCUS_WHITELIST_FILE)),
   );
 }
 

@@ -25,7 +25,7 @@ Verify the installation:
 git-focus --help
 ```
 
-The first command adds the CLI to `PATH`. The second copies the bundled Agent Skill to `$HOME/.agents/skills/git-focus` and creates the default user whitelist at `$HOME/.gitignore-focus-whitelist` if it does not already exist. Existing user rules are never overwritten.
+The first command installs the CLI together with its shipped user whitelist. The second copies the bundled Agent Skill to `$HOME/.agents/skills/git-focus`; it does not create configuration files in the user profile.
 
 To install from an existing local clone instead:
 
@@ -81,7 +81,7 @@ Use `--without-dev` to exclude development-only dependency edges. Use `--force` 
 
 `git-focus` merges two `.gitignore`-format preserve lists for every plan:
 
-1. The user whitelist at `$HOME/.gitignore-focus-whitelist` applies to every repository. The standard `git-focus install-skill` step creates it with the defaults below if it is missing.
+1. The user whitelist ships as `.gitignore-focus-whitelist` inside the installed `git-focus` package and applies to every repository.
 2. The optional workspace whitelist at `<repository>/.gitignore-focus-whitelist` applies only to that repository. It loads after the user whitelist, so workspace `!` rules can override user defaults.
 
 Both files are read fresh for every plan and whitelist command. Blank lines, comments, anchored paths, directory patterns, globs, escaped leading characters, and `!` negation are supported.
@@ -94,7 +94,7 @@ git-focus whitelist show --scope user --repo path/to/repository
 git-focus whitelist show --scope workspace --repo path/to/repository
 ```
 
-Edit the workspace whitelist by default, or select user scope explicitly:
+Edit the workspace whitelist by default, or edit the shipped user whitelist directly with `--scope user`:
 
 ```text
 git-focus whitelist add "/shared/" --repo path/to/repository
@@ -105,7 +105,7 @@ git-focus whitelist match shared/file.txt --repo path/to/repository
 
 `add` and `remove` operate on exact lines and retain comments and direct edits. A workspace edit creates or changes a repository file, so commit it before focusing unless `--force` is explicitly intended. `match` always uses the effective merged policy; it exits with status `0` for a match and `1` for no match.
 
-The shipped user defaults are:
+The shipped user whitelist contains:
 
 ```gitignore
 # Keep Rust build output available while repositories are focused.

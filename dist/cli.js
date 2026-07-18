@@ -2,6 +2,7 @@
 
 // src/cli.ts
 import { Command } from "commander";
+import { fileURLToPath as fileURLToPath2 } from "url";
 
 // src/skill-installer.ts
 import fs from "fs/promises";
@@ -426,7 +427,6 @@ import path5 from "path";
 
 // src/whitelist/focus-whitelist.ts
 import fs4 from "fs/promises";
-import os2 from "os";
 import path4 from "path";
 import ignore from "ignore";
 
@@ -470,32 +470,19 @@ Repository: ${repositoryRoot}`
 
 // src/whitelist/focus-whitelist.ts
 var FOCUS_WHITELIST_FILE = ".gitignore-focus-whitelist";
-var DEFAULT_USER_WHITELIST = `# Keep Rust build output available while repositories are focused.
-/target/
-
-# Keep repository-level AI instructions, skills, and configuration visible.
-/.agents/
-/.claude/
-/.codex/
-/.continue/
-/.cursor/
-/.gemini/
-/.github/
-/.windsurf/
-`;
 var FocusWhitelist = class {
-  constructor(git = new GitCommandRunner(), userHome = os2.homedir()) {
+  constructor(git = new GitCommandRunner(), userWhitelistPath = path4.resolve(FOCUS_WHITELIST_FILE)) {
     this.git = git;
-    this.userHome = userHome;
+    this.userWhitelistPath = userWhitelistPath;
   }
   git;
-  userHome;
+  userWhitelistPath;
   repositoryRoot(repositoryPath) {
     return findRepositoryRootLexically(fullPath(repositoryPath));
   }
   filePath(repositoryPath, scope = "workspace") {
     if (scope === "user") {
-      return path4.join(this.userHome, FOCUS_WHITELIST_FILE);
+      return this.userWhitelistPath;
     }
     return path4.join(this.repositoryRoot(repositoryPath), FOCUS_WHITELIST_FILE);
   }
@@ -504,7 +491,9 @@ var FocusWhitelist = class {
       return await fs4.readFile(this.filePath(repositoryPath, scope), "utf8");
     } catch (error) {
       if (error.code === "ENOENT") {
-        return scope === "user" ? DEFAULT_USER_WHITELIST : "";
+        if (scope === "workspace") {
+          return "";
+        }
       }
       throw error;
     }
@@ -513,22 +502,6 @@ var FocusWhitelist = class {
     const user = await this.read(repositoryPath, "user");
     const workspace = await this.read(repositoryPath, "workspace");
     return joinWhitelistSources(user, workspace);
-  }
-  async ensureUserWhitelist() {
-    const filePath = this.filePath(this.userHome, "user");
-    await fs4.mkdir(path4.dirname(filePath), { recursive: true });
-    try {
-      await fs4.writeFile(filePath, DEFAULT_USER_WHITELIST, {
-        encoding: "utf8",
-        flag: "wx"
-      });
-      return { filePath, created: true };
-    } catch (error) {
-      if (error.code === "EEXIST") {
-        return { filePath, created: false };
-      }
-      throw error;
-    }
   }
   async add(repositoryPath, pattern, scope = "workspace") {
     validatePattern(pattern);
@@ -981,10 +954,13 @@ function readNullTerminated(value, position) {
 }
 
 // src/cli.ts
+var SHIPPED_USER_WHITELIST = fileURLToPath2(
+  new URL("../.gitignore-focus-whitelist", import.meta.url)
+);
 function createServices() {
   const resolvers = [new CargoProjectInputResolver()];
   const gitRunner = new GitCommandRunner();
-  const whitelist = new FocusWhitelist(gitRunner);
+  const whitelist = new FocusWhitelist(gitRunner, SHIPPED_USER_WHITELIST);
   return {
     planner: new FocusPlanner(new ProjectInputResolverRegistry(resolvers)),
     git: new GitFocusService(gitRunner, whitelist),
@@ -1214,13 +1190,9 @@ whitelistCommand.command("match").description("Test whether a repository-relativ
   process.exitCode = code !== 0 ? code : matched ? 0 : 1;
 });
 program.command("install-skill").description("Install the git-focus Agent Skill for the current user.").action(async () => {
-  const code = await run(async (services) => {
+  const code = await run(async () => {
     const target = await installGitFocusSkill();
-    const userWhitelist = await services.whitelist.ensureUserWhitelist();
     console.log(`Installed git-focus Agent Skill to ${target}`);
-    console.log(
-      `${userWhitelist.created ? "Installed default" : "Kept existing"} user whitelist at ${userWhitelist.filePath}`
-    );
   });
   process.exitCode = code;
 });

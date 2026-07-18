@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import ignore, { type Ignore } from "ignore";
 import { GitCommandRunner } from "../git/git-runner.js";
@@ -12,26 +11,7 @@ import {
 
 export const FOCUS_WHITELIST_FILE = ".gitignore-focus-whitelist";
 
-export const DEFAULT_USER_WHITELIST = `# Keep Rust build output available while repositories are focused.
-/target/
-
-# Keep repository-level AI instructions, skills, and configuration visible.
-/.agents/
-/.claude/
-/.codex/
-/.continue/
-/.cursor/
-/.gemini/
-/.github/
-/.windsurf/
-`;
-
 export type WhitelistFileScope = "user" | "workspace";
-
-export interface UserWhitelistInstallResult {
-  filePath: string;
-  created: boolean;
-}
 
 export interface WhitelistMatch {
   repositoryRoot: string;
@@ -42,7 +22,7 @@ export interface WhitelistMatch {
 export class FocusWhitelist {
   constructor(
     private readonly git = new GitCommandRunner(),
-    private readonly userHome = os.homedir(),
+    private readonly userWhitelistPath = path.resolve(FOCUS_WHITELIST_FILE),
   ) {}
 
   repositoryRoot(repositoryPath: string): string {
@@ -54,7 +34,7 @@ export class FocusWhitelist {
     scope: WhitelistFileScope = "workspace",
   ): string {
     if (scope === "user") {
-      return path.join(this.userHome, FOCUS_WHITELIST_FILE);
+      return this.userWhitelistPath;
     }
     return path.join(this.repositoryRoot(repositoryPath), FOCUS_WHITELIST_FILE);
   }
@@ -67,7 +47,9 @@ export class FocusWhitelist {
       return await fs.readFile(this.filePath(repositoryPath, scope), "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        return scope === "user" ? DEFAULT_USER_WHITELIST : "";
+        if (scope === "workspace") {
+          return "";
+        }
       }
       throw error;
     }
@@ -77,23 +59,6 @@ export class FocusWhitelist {
     const user = await this.read(repositoryPath, "user");
     const workspace = await this.read(repositoryPath, "workspace");
     return joinWhitelistSources(user, workspace);
-  }
-
-  async ensureUserWhitelist(): Promise<UserWhitelistInstallResult> {
-    const filePath = this.filePath(this.userHome, "user");
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    try {
-      await fs.writeFile(filePath, DEFAULT_USER_WHITELIST, {
-        encoding: "utf8",
-        flag: "wx",
-      });
-      return { filePath, created: true };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-        return { filePath, created: false };
-      }
-      throw error;
-    }
   }
 
   async add(

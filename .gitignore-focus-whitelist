@@ -1,0 +1,12 @@
+# Keep Rust build output available while the repository is focused.
+/target/
+
+# Keep repository-level AI instructions, skills, and configuration visible.
+/.agents/
+/.claude/
+/.codex/
+/.continue/
+/.cursor/
+/.gemini/
+/.github/
+/.windsurf/

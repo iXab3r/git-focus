@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command } from "commander";
+import { fileURLToPath } from "node:url";
 import { installGitFocusSkill } from "./skill-installer.js";
 import { CargoProjectInputResolver } from "./inputs/cargo/cargo-resolver.js";
 import { ProjectInputResolverRegistry } from "./inputs/registry.js";
@@ -16,10 +17,14 @@ import {
   type WhitelistFileScope,
 } from "./whitelist/focus-whitelist.js";
 
+const SHIPPED_USER_WHITELIST = fileURLToPath(
+  new URL("../.gitignore-focus-whitelist", import.meta.url),
+);
+
 function createServices() {
   const resolvers = [new CargoProjectInputResolver()];
   const gitRunner = new GitCommandRunner();
-  const whitelist = new FocusWhitelist(gitRunner);
+  const whitelist = new FocusWhitelist(gitRunner, SHIPPED_USER_WHITELIST);
   return {
     planner: new FocusPlanner(new ProjectInputResolverRegistry(resolvers)),
     git: new GitFocusService(gitRunner, whitelist),
@@ -311,13 +316,9 @@ program
   .command("install-skill")
   .description("Install the git-focus Agent Skill for the current user.")
   .action(async () => {
-    const code = await run(async (services) => {
+    const code = await run(async () => {
       const target = await installGitFocusSkill();
-      const userWhitelist = await services.whitelist.ensureUserWhitelist();
       console.log(`Installed git-focus Agent Skill to ${target}`);
-      console.log(
-        `${userWhitelist.created ? "Installed default" : "Kept existing"} user whitelist at ${userWhitelist.filePath}`,
-      );
     });
     process.exitCode = code;
   });

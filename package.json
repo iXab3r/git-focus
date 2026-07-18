@@ -8,7 +8,8 @@
   },
   "files": [
     "dist",
-    ".agents/skills/git-focus"
+    ".agents/skills/git-focus",
+    ".gitignore-focus-whitelist"
   ],
   "engines": {
     "node": ">=20"

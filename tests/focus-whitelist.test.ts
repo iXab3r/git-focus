@@ -1,7 +1,7 @@
+import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  DEFAULT_USER_WHITELIST,
   FOCUS_WHITELIST_FILE,
   FocusWhitelist,
 } from "../src/whitelist/focus-whitelist.js";
@@ -11,6 +11,10 @@ import {
   write,
 } from "./helpers.js";
 
+const SHIPPED_USER_WHITELIST = fs.readFileSync(
+  path.resolve(FOCUS_WHITELIST_FILE),
+  "utf8",
+);
 const temps: TemporaryDirectory[] = [];
 
 afterEach(() => {
@@ -21,13 +25,15 @@ afterEach(() => {
 
 function createWhitelist(): {
   whitelist: FocusWhitelist;
-  userHome: TemporaryDirectory;
+  userFiles: TemporaryDirectory;
 } {
-  const userHome = new TemporaryDirectory();
-  temps.push(userHome);
+  const userFiles = new TemporaryDirectory();
+  temps.push(userFiles);
+  const userWhitelistPath = path.join(userFiles.path, FOCUS_WHITELIST_FILE);
+  write(userFiles.path, FOCUS_WHITELIST_FILE, SHIPPED_USER_WHITELIST);
   return {
-    whitelist: new FocusWhitelist(undefined, userHome.path),
-    userHome,
+    whitelist: new FocusWhitelist(undefined, userWhitelistPath),
+    userFiles,
   };
 }
 
@@ -59,13 +65,13 @@ function createRepository(): TemporaryDirectory {
 }
 
 describe("FocusWhitelist", () => {
-  it("layers default user rules under workspace overrides", async () => {
+  it("layers shipped user rules under workspace overrides", async () => {
     const temporary = createRepository();
     const { whitelist } = createWhitelist();
 
     await expect(
       whitelist.read(temporary.path, "user"),
-    ).resolves.toBe(DEFAULT_USER_WHITELIST);
+    ).resolves.toBe(SHIPPED_USER_WHITELIST);
     await expect(
       whitelist.match(temporary.path, ".agents/skills/example/SKILL.md"),
     ).resolves.toMatchObject({ matched: true });
@@ -81,18 +87,16 @@ describe("FocusWhitelist", () => {
     );
   });
 
-  it("installs the default user whitelist once without overwriting edits", async () => {
+  it("edits the shipped user whitelist directly", async () => {
     const temporary = createRepository();
     const { whitelist } = createWhitelist();
 
-    await expect(whitelist.ensureUserWhitelist()).resolves.toMatchObject({
-      created: true,
-    });
     await whitelist.add(temporary.path, "/personal/", "user");
-    await expect(whitelist.ensureUserWhitelist()).resolves.toMatchObject({
-      created: false,
-    });
     await expect(whitelist.read(temporary.path, "user")).resolves.toContain(
+      "/personal/",
+    );
+    await whitelist.remove(temporary.path, "/personal/", "user");
+    await expect(whitelist.read(temporary.path, "user")).resolves.not.toContain(
       "/personal/",
     );
   });
