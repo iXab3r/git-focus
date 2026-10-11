@@ -16,7 +16,11 @@ export interface GitSparsePlan {
   repositories: RepositorySparsePlan[];
 }
 
+import type { PathRule } from "./path-focus.js";
+
 export interface GitFocusStatus {
+  pathRules?: PathRule[];
+  remainingPaths?: string[];
   isFocused: boolean;
   primaryRepositoryRoot: string;
   inputPath: string | null;
@@ -25,6 +29,7 @@ export interface GitFocusStatus {
 }
 
 export interface GitFocusState {
+  pathRules?: PathRule[];
   inputPath: string;
   inputKind: string;
   repositories: RepositorySparsePlan[];

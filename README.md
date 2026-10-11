@@ -77,6 +77,37 @@ git-focus full --repo path/to/repository
 
 Use `--without-dev` to exclude development-only dependency edges. Use `--force` only when intentionally overriding the clean-working-tree safety gate.
 
+## Select arbitrary paths
+
+Path selection starts from the full tree and needs no project manifest or language
+adapter. Exact file/directory paths are relative to the repository root. Directory
+paths include their descendants; pattern characters are literal, not globs.
+
+```text
+git-focus exclude tools/PoEStaticOffsetGenerator/Recipes/Modules --repo path/to/repository --dry-run
+git-focus exclude tools/PoEStaticOffsetGenerator/Recipes/Modules --repo path/to/repository
+git-focus include tools/PoEStaticOffsetGenerator/Recipes/Modules/player/Vital tools/PoEStaticOffsetGenerator/Recipes/Modules/component/Life --repo path/to/repository
+git-focus status --repo path/to/repository
+git-focus full --repo path/to/repository
+```
+
+Actions accumulate; repeated actions are safe. A later parent action supersedes
+earlier nested exceptions. Include can restore a child under an excluded parent,
+or reserve an untracked path for a new module before its first file/commit exists.
+Include that new path before creating files so normal git add works.
+
+Dry-run changes neither files nor focus state. Applied exclusions use Git sparse
+checkout and physically remove clean tracked files from the working tree. History
+is retained. The CLI verifies actual absence after applying and exits unsuccessfully
+when excluded modified, untracked, or ignored files remain. Status reports these
+remaining paths; Git owns restoration through full. Such local files and build
+caches are never deleted by git-focus.
+
+The same clean-worktree gate and explicit --force apply. Preserved whitelist
+directories cannot be excluded until the preserve policy is adjusted. Restore
+full before switching between project dependency focus and path selection.
+State belongs to the current worktree, including linked Git worktrees.
+
 ## Whitelist (preserve list)
 
 `git-focus` merges two `.gitignore`-format preserve lists for every plan:

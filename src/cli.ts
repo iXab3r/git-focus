@@ -163,6 +163,27 @@ program
     process.exitCode = code;
   });
 
+for (const action of ["exclude", "include"] as const) {
+  program.command(action)
+    .description(`${action === "include" ? "Restore" : "Hide"} repository-relative files or directories.`)
+    .argument("<paths...>", "Exact paths relative to the repository root; no glob expansion.")
+    .option("--dry-run", "Preview path selection without changing files.")
+    .action(async (paths: string[], options: { dryRun?: boolean }) => {
+      const code = await run(async services => {
+        const plan = await services.git.planPaths(program.opts().repo, paths, action === "include");
+        console.log(`Repository: ${plan.repositoryRoot}`);
+        for (const rule of plan.rules) console.log(`  ${rule.include ? "include" : "exclude"} ${rule.path}`);
+        console.log(`Tracked files excluded: ${plan.excludedFiles.length}`);
+        if (options.dryRun) return;
+        const remaining = await services.git.applyPaths(plan, program.opts().force);
+        console.log("Path selection applied.");
+        if (remaining.length) throw new Error(`Excluded files still on disk (${remaining.length}):\n${remaining.map(p => "  " + p).join("\n")}`);
+        console.log("Verified: excluded files are absent from the working tree.");
+      });
+      process.exitCode = code;
+    });
+}
+
 program
   .command("full")
   .description("Restore full source visibility for the last focused repository.")
@@ -184,6 +205,11 @@ program
       const status = await services.git.getStatus(program.opts().repo);
       console.log(status.isFocused ? "Mode: focused" : "Mode: full");
       console.log(`Repository: ${status.primaryRepositoryRoot}`);
+      if (status.pathRules) {
+        for (const rule of status.pathRules) console.log(`  ${rule.include ? "include" : "exclude"} ${rule.path}`);
+        for (const remaining of status.remainingPaths ?? []) console.log(`  Still on disk: ${remaining}`);
+        return;
+      }
       if (status.isFocused) {
         console.log(`Input: ${status.inputPath}`);
         console.log(`Input type: ${status.inputKind}`);
