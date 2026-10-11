@@ -423,7 +423,7 @@ var FocusPlanner = class {
 
 // src/git/git-focus-service.ts
 import fs5 from "fs/promises";
-import path5 from "path";
+import path6 from "path";
 
 // src/whitelist/focus-whitelist.ts
 import fs4 from "fs/promises";
@@ -437,13 +437,14 @@ var GitCommandRunner = class {
     this.executable = executable;
   }
   executable;
-  async run(repositoryRoot, arguments_) {
+  async run(repositoryRoot, arguments_, input) {
     const result = await execa2(
       this.executable,
       ["-C", repositoryRoot, ...arguments_],
       {
         reject: false,
-        encoding: "utf8"
+        encoding: "utf8",
+        ...input === void 0 ? {} : { input }
       }
     );
     if (result.exitCode !== 0) {
@@ -640,6 +641,64 @@ function minimizeDirectories(directories) {
   return result.sort((left, right) => left.localeCompare(right));
 }
 
+// src/git/path-focus.ts
+import path5 from "path";
+function normalizeFocusPath(root, value, tracked) {
+  const full = path5.resolve(root, value);
+  const relative = normalizeGitPath(path5.relative(root, full));
+  if (!isInside(root, full) || !relative || relative === ".git" || relative.startsWith(".git/")) {
+    throw new Error(`Expected a file or directory inside the repository: ${value}`);
+  }
+  if (/[\r\n\0]/u.test(relative)) throw new Error("Paths cannot contain line breaks or NUL.");
+  const key = process.platform === "win32" ? relative.toLowerCase() : relative;
+  const existing = tracked.find((p) => {
+    const candidate = process.platform === "win32" ? p.toLowerCase() : p;
+    return candidate === key || candidate.startsWith(key + "/");
+  });
+  return existing ? existing.slice(0, relative.length) : relative;
+}
+function updatePathRules(previous, paths, include) {
+  let rules = [...previous];
+  for (const candidate of paths) {
+    rules = rules.filter((r) => r.path !== candidate && !r.path.startsWith(candidate + "/"));
+    rules.push({ path: candidate, include });
+  }
+  return rules;
+}
+function pathIsIncluded(candidate, rules) {
+  let included = true;
+  for (const rule of rules) {
+    if (candidate === rule.path || candidate.startsWith(rule.path + "/")) included = rule.include;
+  }
+  return included;
+}
+function literal(value) {
+  return value.replace(/[\\*?[\] ]/gu, "\\$&");
+}
+function pathSparsePatterns(rules) {
+  const prefixes = /* @__PURE__ */ new Set();
+  for (const rule of rules) {
+    const parts = rule.path.split("/");
+    for (let i = 1; i <= parts.length; i++) prefixes.add(parts.slice(0, i).join("/"));
+  }
+  const children = (parent) => [...prefixes].filter((p) => path5.posix.dirname(p) === (parent || ".")).sort();
+  const visible = (prefix) => pathIsIncluded(prefix, rules) || children(prefix).some(visible);
+  const patterns = ["/*"];
+  const visit = (prefix, parentIncluded) => {
+    const included = pathIsIncluded(prefix, rules);
+    if (!included && !visible(prefix)) {
+      if (parentIncluded) patterns.push(`!/${literal(prefix)}`);
+      return;
+    }
+    if (!included) {
+      patterns.push(`/${literal(prefix)}`, `!/${literal(prefix)}/*`);
+    } else if (!parentIncluded) patterns.push(`/${literal(prefix)}`);
+    for (const child of children(prefix)) visit(child, included);
+  };
+  for (const child of children("")) visit(child, true);
+  return patterns.join("\n") + "\n";
+}
+
 // src/git/git-focus-service.ts
 var GitFocusService = class {
   constructor(git = new GitCommandRunner(), whitelist = new FocusWhitelist(git)) {
@@ -676,7 +735,7 @@ var GitFocusService = class {
         this.addPath(
           repositories,
           repository.repositoryRoot,
-          path5.join(repository.repositoryRoot, directory),
+          path6.join(repository.repositoryRoot, directory),
           true
         );
       }
@@ -750,6 +809,67 @@ var GitFocusService = class {
       throw error;
     }
   }
+  async planPaths(repositoryPath, paths, include) {
+    const repositoryRoot = findRepositoryRootLexically(fullPath(repositoryPath));
+    const state = await this.readState(repositoryRoot);
+    if (state && state.inputKind !== "paths" || !state && await this.isSparseCheckout(repositoryRoot)) {
+      throw new Error("Run `git-focus full` before switching to path selection.");
+    }
+    const tracked = (await this.git.run(repositoryRoot, ["ls-files", "-z"])).split("\0").filter(Boolean);
+    const normalized = paths.map((p) => normalizeFocusPath(repositoryRoot, p, tracked));
+    const previousRules = state?.pathRules ?? [];
+    const rules = updatePathRules(previousRules, normalized, include);
+    const preserved = await this.whitelist.matchedTrackedDirectories(repositoryRoot);
+    for (const directory of preserved) {
+      if (!pathIsIncluded(directory, rules) || rules.some((r) => !r.include && r.path.startsWith(directory + "/"))) {
+        throw new Error(`Path rules exclude preserved directory ${directory}; update the whitelist first.`);
+      }
+    }
+    return { repositoryRoot, rules, previousRules, excludedFiles: tracked.filter((p) => !pathIsIncluded(p, rules)) };
+  }
+  async applyPaths(plan, force) {
+    await this.ensureClean(plan.repositoryRoot, force);
+    const state = await this.readState(plan.repositoryRoot);
+    if (state && state.inputKind !== "paths" || JSON.stringify(state?.pathRules ?? []) !== JSON.stringify(plan.previousRules)) {
+      throw new Error("Focus state changed; preview the operation again.");
+    }
+    const set = async (rules) => this.git.run(
+      plan.repositoryRoot,
+      ["sparse-checkout", "set", "--no-cone", "--no-sparse-index", "--stdin"],
+      pathSparsePatterns(rules)
+    );
+    try {
+      await set(plan.rules);
+      await this.writeState({
+        primaryRepositoryRoot: plan.repositoryRoot,
+        inputPath: plan.repositoryRoot,
+        inputKind: "paths",
+        pathRules: plan.rules,
+        repositories: [{ repositoryRoot: plan.repositoryRoot, includeWholeRepository: false, includedPaths: [] }]
+      });
+    } catch (error) {
+      if (state) await set(plan.previousRules);
+      else await this.git.tryRun(plan.repositoryRoot, ["sparse-checkout", "disable"]);
+      throw error;
+    }
+    return this.remainingPathFiles(plan.repositoryRoot, plan.rules);
+  }
+  async remainingPathFiles(repositoryRoot, rules) {
+    const candidates = (await this.git.run(
+      repositoryRoot,
+      ["ls-files", "--cached", "--others", "-z", "--", ...rules.filter((r) => !r.include).map((r) => `:(top,literal)${r.path}`)]
+    )).split("\0").filter((p) => p && !pathIsIncluded(p, rules));
+    const remaining = [];
+    for (const candidate of new Set(candidates)) {
+      try {
+        await fs5.lstat(path6.join(repositoryRoot, candidate));
+        remaining.push(candidate);
+      } catch (error) {
+        if (!["ENOENT", "ENOTDIR"].includes(error.code ?? "")) throw error;
+      }
+    }
+    return remaining.sort();
+  }
   async restoreFull(repositoryPath) {
     const primaryRoot = findRepositoryRootLexically(fullPath(repositoryPath));
     const state = await this.readState(primaryRoot);
@@ -796,6 +916,10 @@ var GitFocusService = class {
     return {
       isFocused: true,
       primaryRepositoryRoot: primaryRoot,
+      ...state.pathRules ? {
+        pathRules: state.pathRules,
+        remainingPaths: await this.remainingPathFiles(primaryRoot, state.pathRules)
+      } : {},
       inputPath: state.inputPath,
       inputKind: state.inputKind,
       repositories: state.repositories
@@ -842,8 +966,9 @@ var GitFocusService = class {
   }
   async writeState(plan) {
     const statePath = await this.getStatePath(plan.primaryRepositoryRoot);
-    await fs5.mkdir(path5.dirname(statePath), { recursive: true });
+    await fs5.mkdir(path6.dirname(statePath), { recursive: true });
     const state = {
+      ...plan.pathRules ? { pathRules: plan.pathRules } : {},
       inputPath: plan.inputPath,
       inputKind: String(plan.inputKind),
       repositories: plan.repositories,
@@ -880,7 +1005,7 @@ var GitFocusService = class {
       "--git-path",
       "git-focus/state.json"
     ])).trim();
-    return path5.isAbsolute(relative) ? relative : path5.resolve(primaryRoot, relative);
+    return path6.isAbsolute(relative) ? relative : path6.resolve(primaryRoot, relative);
   }
   addPath(repositories, repositoryRoot, sourceDirectory, whitelisted = false) {
     const key = repositoryKey(repositoryRoot);
@@ -894,7 +1019,7 @@ var GitFocusService = class {
       };
       repositories.set(key, plan);
     }
-    const relative = path5.relative(plan.repositoryRoot, fullPath(sourceDirectory));
+    const relative = path6.relative(plan.repositoryRoot, fullPath(sourceDirectory));
     if (relative === "") {
       plan.includeWholeRepository = true;
       return;
@@ -908,7 +1033,7 @@ var GitFocusService = class {
   addNestedRepositoryChain(repositories, primaryRoot, repositoryRoot) {
     let nestedRoot = fullPath(repositoryRoot);
     while (!pathsEqual(nestedRoot, primaryRoot)) {
-      const parentSearchStart = path5.dirname(nestedRoot);
+      const parentSearchStart = path6.dirname(nestedRoot);
       if (parentSearchStart === nestedRoot) {
         throw new Error(`Repository \`${nestedRoot}\` has no parent.`);
       }
@@ -1074,6 +1199,23 @@ program.command("plan").description(
   });
   process.exitCode = code;
 });
+for (const action of ["exclude", "include"]) {
+  program.command(action).description(`${action === "include" ? "Restore" : "Hide"} repository-relative files or directories.`).argument("<paths...>", "Exact paths relative to the repository root; no glob expansion.").option("--dry-run", "Preview path selection without changing files.").action(async (paths, options) => {
+    const code = await run(async (services) => {
+      const plan = await services.git.planPaths(program.opts().repo, paths, action === "include");
+      console.log(`Repository: ${plan.repositoryRoot}`);
+      for (const rule of plan.rules) console.log(`  ${rule.include ? "include" : "exclude"} ${rule.path}`);
+      console.log(`Tracked files excluded: ${plan.excludedFiles.length}`);
+      if (options.dryRun) return;
+      const remaining = await services.git.applyPaths(plan, program.opts().force);
+      console.log("Path selection applied.");
+      if (remaining.length) throw new Error(`Excluded files still on disk (${remaining.length}):
+${remaining.map((p) => "  " + p).join("\n")}`);
+      console.log("Verified: excluded files are absent from the working tree.");
+    });
+    process.exitCode = code;
+  });
+}
 program.command("full").description("Restore full source visibility for the last focused repository.").action(async () => {
   const code = await run(async (services) => {
     await services.git.restoreFull(program.opts().repo);
@@ -1088,6 +1230,11 @@ program.command("status").description("Show the active git-focus state.").action
     const status = await services.git.getStatus(program.opts().repo);
     console.log(status.isFocused ? "Mode: focused" : "Mode: full");
     console.log(`Repository: ${status.primaryRepositoryRoot}`);
+    if (status.pathRules) {
+      for (const rule of status.pathRules) console.log(`  ${rule.include ? "include" : "exclude"} ${rule.path}`);
+      for (const remaining of status.remainingPaths ?? []) console.log(`  Still on disk: ${remaining}`);
+      return;
+    }
     if (status.isFocused) {
       console.log(`Input: ${status.inputPath}`);
       console.log(`Input type: ${status.inputKind}`);
