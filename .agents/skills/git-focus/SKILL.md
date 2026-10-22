@@ -13,7 +13,7 @@ A focused repository is deliberately incomplete as a working tree. Git history s
 
 1. Run `git-focus status --repo <repository>` before concluding that a referenced file, directory, or subsystem does not exist.
 2. When the mode is `focused`, do not recreate, replace, or rewrite a missing path merely because it is absent from the working tree.
-3. Use `git-focus full --repo <repository>` before repository-wide discovery, architectural analysis, or work that requires hidden areas.
+3. Keep architectural analysis focused on the assigned topic. Use `git-focus full --repo <repository>` before repository-wide discovery or when the actual investigation requires hidden areas; do not expand solely because the role is an architect.
 4. Treat documentation outside the focused project as unavailable context, not evidence that the documented subsystem should be recreated.
 
 ## Ensure availability
@@ -33,7 +33,7 @@ A focused repository is deliberately incomplete as a working tree. Git history s
    git-focus install-skill
    ```
 
-4. If a newly installed skill is not visible to the agent host, start a new task or restart the host. If the repository path is unknown or installation fails, report the exact blocker and stop.
+4. If a newly installed skill is not visible to the agent host, check that host's discovery or reload mechanism before suggesting a new task or restart. If the repository path is unknown or installation fails, report the exact blocker and stop dependent focus operations; continue unrelated authorized work when possible.
 
 ## Focus a task
 
@@ -86,7 +86,7 @@ Run the full gate, then reapply the prior project focus only if more scoped work
 
 - Treat the printed project and repository plan as the scope receipt.
 - Treat the user whitelist shipped inside the installed `git-focus` package and the optional workspace whitelist at `<repository>/.gitignore-focus-whitelist` as preserve/include lists layered onto the dependency plan. User rules load first and workspace rules can override them with `!` patterns. Both files are reloaded for each command. Use `git-focus whitelist match <path> --repo <repository>` to test the effective result.
-- Confirm that repository-level AI context directories such as `.agents`, `.claude`, `.codex`, `.cursor`, and `.github` are preserved. Repository-root instruction and contribution files remain visible automatically in Git cone mode.
+- Check that the effective preserve rules retain the context needed for the task. The shipped defaults include AI directories, but workspace `!` rules can intentionally exclude them; respect those overrides and report missing required context rather than silently changing the policy. Repository-root instruction and contribution files remain visible automatically in Git cone mode.
 - Keep ignored caches such as top-level Cargo `target/`; never invoke Git cleanup commands through this skill.
 - Untracked files and local symlinks remain visible because sparse checkout does not own them. Do not delete them to make a focus plan look cleaner.
 - Stop if installation cannot be completed, the requested input adapter is unsupported, Cargo metadata fails, or a local dependency escapes the primary repository.
