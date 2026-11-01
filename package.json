@@ -17,7 +17,7 @@
   "scripts": {
     "bundle": "tsup src/cli.ts --format esm --clean --sourcemap",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run && node --test tests/release-evidence.test.mjs",
     "test:watch": "vitest"
   },
   "keywords": [
