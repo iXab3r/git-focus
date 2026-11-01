@@ -5,3 +5,5 @@ coverage/
 *.user
 *.suo
 .DS_Store
+
+release-artifacts/

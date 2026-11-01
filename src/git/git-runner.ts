@@ -4,13 +4,14 @@ import { formatProcessFailure } from "../process-error.js";
 export class GitCommandRunner {
   constructor(private readonly executable = "git") {}
 
-  async run(repositoryRoot: string, arguments_: string[]): Promise<string> {
+  async run(repositoryRoot: string, arguments_: string[], input?: string): Promise<string> {
     const result = await execa(
       this.executable,
       ["-C", repositoryRoot, ...arguments_],
       {
         reject: false,
         encoding: "utf8",
+        ...(input === undefined ? {} : { input }),
       },
     );
     if (result.exitCode !== 0) {

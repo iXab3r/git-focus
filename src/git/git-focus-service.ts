@@ -19,6 +19,8 @@ import type {
   RepositorySparsePlan,
 } from "./types.js";
 
+import { normalizeFocusPath, pathIsIncluded, pathSparsePatterns, updatePathRules, type PathFocusPlan } from "./path-focus.js";
+
 interface MutableRepositoryPlan {
   repositoryRoot: string;
   includeWholeRepository: boolean;
@@ -155,6 +157,60 @@ export class GitFocusService {
     }
   }
 
+  async planPaths(repositoryPath: string, paths: string[], include: boolean): Promise<PathFocusPlan> {
+    const repositoryRoot = findRepositoryRootLexically(fullPath(repositoryPath));
+    const state = await this.readState(repositoryRoot);
+    if ((state && state.inputKind !== "paths") || (!state && await this.isSparseCheckout(repositoryRoot))) {
+      throw new Error("Run `git-focus full` before switching to path selection.");
+    }
+    const tracked = (await this.git.run(repositoryRoot, ["ls-files", "-z"])).split("\0").filter(Boolean);
+    const normalized = paths.map(p => normalizeFocusPath(repositoryRoot, p, tracked));
+    const previousRules = state?.pathRules ?? [];
+    const rules = updatePathRules(previousRules, normalized, include);
+    const preserved = await this.whitelist.matchedTrackedDirectories(repositoryRoot);
+    for (const directory of preserved) {
+      if (!pathIsIncluded(directory, rules) || rules.some(r => !r.include && r.path.startsWith(directory + "/"))) {
+        throw new Error(`Path rules exclude preserved directory ${directory}; update the whitelist first.`);
+      }
+    }
+    return { repositoryRoot, rules, previousRules, excludedFiles: tracked.filter(p => !pathIsIncluded(p, rules)) };
+  }
+
+  async applyPaths(plan: PathFocusPlan, force: boolean): Promise<string[]> {
+    await this.ensureClean(plan.repositoryRoot, force);
+    const state = await this.readState(plan.repositoryRoot);
+    if ((state && state.inputKind !== "paths") || JSON.stringify(state?.pathRules ?? []) !== JSON.stringify(plan.previousRules)) {
+      throw new Error("Focus state changed; preview the operation again.");
+    }
+    const set = async (rules: typeof plan.rules) => this.git.run(plan.repositoryRoot,
+      ["sparse-checkout", "set", "--no-cone", "--no-sparse-index", "--stdin"], pathSparsePatterns(rules));
+    try {
+      await set(plan.rules);
+      await this.writeState({ primaryRepositoryRoot: plan.repositoryRoot, inputPath: plan.repositoryRoot,
+        inputKind: "paths", pathRules: plan.rules,
+        repositories: [{ repositoryRoot: plan.repositoryRoot, includeWholeRepository: false, includedPaths: [] }] });
+    } catch (error) {
+      if (state) await set(plan.previousRules);
+      else await this.git.tryRun(plan.repositoryRoot, ["sparse-checkout", "disable"]);
+      throw error;
+    }
+    return this.remainingPathFiles(plan.repositoryRoot, plan.rules);
+  }
+
+  private async remainingPathFiles(repositoryRoot: string, rules: NonNullable<GitFocusState["pathRules"]>): Promise<string[]> {
+    // Git retains modified/untracked/ignored files. Report them; never remove them ourselves.
+    const candidates = (await this.git.run(repositoryRoot,
+      ["ls-files", "--cached", "--others", "-z", "--", ...rules.filter(r => !r.include).map(r => `:(top,literal)${r.path}`)])).split("\0").filter(p => p && !pathIsIncluded(p, rules));
+    const remaining: string[] = [];
+    for (const candidate of new Set(candidates)) {
+      try { await fs.lstat(path.join(repositoryRoot, candidate)); remaining.push(candidate); }
+      catch (error) {
+        if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+      }
+    }
+    return remaining.sort();
+  }
+
   async restoreFull(repositoryPath: string): Promise<void> {
     const primaryRoot = findRepositoryRootLexically(fullPath(repositoryPath));
     const state = await this.readState(primaryRoot);
@@ -205,6 +261,8 @@ export class GitFocusService {
     return {
       isFocused: true,
       primaryRepositoryRoot: primaryRoot,
+      ...(state.pathRules ? { pathRules: state.pathRules,
+        remainingPaths: await this.remainingPathFiles(primaryRoot, state.pathRules) } : {}),
       inputPath: state.inputPath,
       inputKind: state.inputKind,
       repositories: state.repositories,
@@ -256,10 +314,11 @@ export class GitFocusService {
     return exitCode === 0 && stdout.trim().toLowerCase() === "true";
   }
 
-  private async writeState(plan: GitSparsePlan): Promise<void> {
+  private async writeState(plan: { primaryRepositoryRoot: string } & Omit<GitFocusState, "createdAt">): Promise<void> {
     const statePath = await this.getStatePath(plan.primaryRepositoryRoot);
     await fs.mkdir(path.dirname(statePath), { recursive: true });
     const state: GitFocusState = {
+      ...(plan.pathRules ? { pathRules: plan.pathRules } : {}),
       inputPath: plan.inputPath,
       inputKind: String(plan.inputKind),
       repositories: plan.repositories,

@@ -1,6 +1,6 @@
 ---
 name: git-focus
-description: Install and use the git-focus CLI to narrow a large Git monorepo to one Cargo project and its transitive local dependency source. In a focused checkout, unrelated tracked paths are intentionally absent—not deleted—so check focus state before concluding that files, directories, or subsystems do not exist.
+description: Install and use the git-focus CLI to narrow a Git working tree by arbitrary file/directory paths or to one Cargo project and its local dependency source. In a focused checkout, unrelated tracked paths are intentionally absent—not deleted—so check focus state before concluding that files, directories, or subsystems do not exist.
 ---
 
 # Git Focus
@@ -71,6 +71,27 @@ A focused repository is deliberately incomplete as a working tree. Git history s
    ```
 
    Never stash, commit, clean, or force-deinitialize a submodule merely to make focus succeed.
+
+## Select files and directories
+
+No project manifest or language adapter is needed for path selection.
+
+1. Check status and preserve rules as above. Use a clean worktree; never bypass
+   the clean gate with --force without explicit user authorization.
+2. Preview with git-focus exclude <paths...> --repo <repository> --dry-run.
+3. Apply the reviewed paths with git-focus exclude <paths...> --repo <repository>.
+4. Verify filesystem absence and git-focus status. An unsuccessful apply may have
+   activated the rules while leaving local modified/untracked/ignored files in
+   place; status reports them. Never delete these files to make focus appear clean.
+5. Return only needed paths with git-focus include <paths...> --repo <repository>.
+   Include can reserve a new path before creating a module there. This explicit
+   inclusion permits new work; do not recreate an existing hidden tracked module.
+6. Use git-focus full to restore all tracked source before full acceptance gates.
+
+Paths are exact repository-relative file/directory names. Actions accumulate;
+the latest parent action removes earlier nested exceptions. Include children of
+excluded parents explicitly. Restore full before switching project/path modes.
+The CLI owns sparse patterns; do not edit them manually. Rules are worktree-local.
 
 ## Verify work
 
