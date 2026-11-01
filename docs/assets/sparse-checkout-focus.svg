@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="900" height="290" viewBox="0 0 900 290" role="img" aria-labelledby="title description">
-  <title id="title">Focus by project or path</title>
-  <desc id="description">A repository contains api, its shared dependency, tools, AI context and an ignored target cache. Focusing api or excluding tools leaves api, shared, AI context and the cache visible. git-focus full restores tracked source.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="310" viewBox="0 0 900 310" role="img" aria-labelledby="title description">
+  <title id="title">Exclude module blocks the AI task does not need</title>
+  <desc id="description">A monorepo has player, combat, editor, rendering and legacy modules. Exclude the modules tree, then include player and combat for the AI task. Editor, rendering and legacy source is hidden from the working tree. git-focus full restores all tracked source.</desc>
   <style>
     svg { --text:#0f172a; --muted:#64748b; --card:#f8fafc; --border:#cbd5e1; --accent:#2563eb; }
     @media (prefers-color-scheme:dark) { svg { --text:#e2e8f0; --muted:#94a3b8; --card:#0f172a; --border:#334155; --accent:#60a5fa; } }
@@ -17,27 +17,27 @@
       <path d="M0 0 10 5 0 10z" fill="var(--accent)"/>
     </marker>
   </defs>
-  <text class="label" x="30" y="32">Full repository</text>
-  <text class="label" x="630" y="32">Focused working tree</text>
-  <rect class="card" x="20" y="48" width="260" height="180" rx="12"/>
-  <rect class="card" x="620" y="48" width="260" height="180" rx="12"/>
+  <text class="label" x="30" y="32">Monorepo modules</text>
+  <text class="label" x="630" y="32">AI task scope</text>
+  <rect class="card" x="20" y="48" width="260" height="195" rx="12"/>
+  <rect class="card" x="620" y="48" width="260" height="195" rx="12"/>
   <g class="path">
-    <text x="44" y="81">api/</text>
-    <text x="44" y="111">shared/</text>
-    <text x="44" y="141">tools/</text>
-    <text class="muted" x="44" y="171">.agents/</text>
-    <text class="muted" x="44" y="201">target/</text>
-    <text x="644" y="81">api/</text>
-    <text x="644" y="111">shared/</text>
-    <text class="muted" x="644" y="141">.agents/</text>
-    <text class="muted" x="644" y="171">target/</text>
+    <text x="44" y="78">modules/</text>
+    <text x="65" y="108">player/</text>
+    <text x="65" y="138">combat/</text>
+    <text class="muted" x="65" y="168">editor/</text>
+    <text class="muted" x="65" y="198">rendering/</text>
+    <text class="muted" x="65" y="228">legacy/</text>
+    <text x="644" y="78">modules/</text>
+    <text x="665" y="108">player/</text>
+    <text x="665" y="138">combat/</text>
   </g>
-  <text class="muted" x="450" y="78" text-anchor="middle" font-size="15">Project or exact paths</text>
-  <text class="command" x="450" y="112" text-anchor="middle">git-focus api/Cargo.toml</text>
-  <text class="muted" x="450" y="137" text-anchor="middle" font-size="13">or</text>
-  <text class="command" x="450" y="162" text-anchor="middle">git-focus exclude tools/</text>
-  <path class="arrow" d="M305 192H595" marker-end="url(#arrow)"/>
-  <path class="arrow" d="M620 249H280" marker-end="url(#arrow)"/>
-  <text class="command" x="450" y="275" text-anchor="middle">git-focus full</text>
-  <text class="muted" x="750" y="210" text-anchor="middle" font-size="14">Ignored caches stay</text>
+  <text class="command" x="450" y="88" text-anchor="middle">git-focus exclude modules/</text>
+  <text class="command" x="450" y="126" text-anchor="middle">git-focus include</text>
+  <text class="command" x="450" y="152" text-anchor="middle">modules/player/</text>
+  <text class="command" x="450" y="178" text-anchor="middle">modules/combat/</text>
+  <path class="arrow" d="M305 210H595" marker-end="url(#arrow)"/>
+  <text class="muted" x="750" y="216" text-anchor="middle" font-size="14">Unrelated modules hidden</text>
+  <path class="arrow" d="M620 266H280" marker-end="url(#arrow)"/>
+  <text class="command" x="450" y="294" text-anchor="middle">git-focus full</text>
 </svg>

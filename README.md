@@ -1,8 +1,8 @@
 # git-focus
 
-Keep only the source you need in a Git working tree.
+Hide irrelevant module blocks from AI coding agents in large monorepos.
 
-- **Any paths:** hide files or directories with `exclude`, bring them back with `include`.
+- **Module blocks:** `exclude` large module trees, then `include` only the parts relevant to the AI task.
 - **Cargo projects:** keep a Rust project and its transitive local dependencies.
 - **Preview:** `--dry-run` for paths, `plan` for Cargo projects.
 - **Preserve rules:** keep shared source and AI context with `.gitignore-focus-whitelist`.
@@ -10,7 +10,7 @@ Keep only the source you need in a Git working tree.
 - **Worktree-local state:** focus linked worktrees independently.
 - **Reversible:** `full` restores tracked source; Git history stays intact.
 
-![Select a Cargo project or exact paths, then restore the full tree when needed](docs/assets/sparse-checkout-focus.svg)
+![Hide a module tree and expose only the player and combat modules for an AI task](docs/assets/sparse-checkout-focus.svg)
 
 ## Install
 
@@ -26,9 +26,9 @@ git-focus install-skill
 Run from your repository, or add `--repo /path/to/repo`.
 
 ```sh
-git-focus exclude tools/ --dry-run
-git-focus exclude tools/
-git-focus include tools/parser/
+git-focus exclude modules/ --dry-run
+git-focus exclude modules/
+git-focus include modules/player/ modules/combat/
 git-focus status
 git-focus full
 
