@@ -645,7 +645,7 @@ function minimizeDirectories(directories) {
 import path5 from "path";
 function normalizeFocusPath(root, value, tracked) {
   const full = path5.resolve(root, value);
-  const relative = normalizeGitPath(path5.relative(root, full));
+  const relative = path5.relative(root, full).split(path5.sep).join("/");
   if (!isInside(root, full) || !relative || relative === ".git" || relative.startsWith(".git/")) {
     throw new Error(`Expected a file or directory inside the repository: ${value}`);
   }

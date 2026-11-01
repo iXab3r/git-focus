@@ -1,5 +1,5 @@
 import path from "node:path";
-import { isInside, normalizeGitPath } from "../paths.js";
+import { isInside } from "../paths.js";
 
 export interface PathRule { path: string; include: boolean }
 export interface PathFocusPlan {
@@ -11,7 +11,7 @@ export interface PathFocusPlan {
 
 export function normalizeFocusPath(root: string, value: string, tracked: string[]): string {
   const full = path.resolve(root, value);
-  const relative = normalizeGitPath(path.relative(root, full));
+  const relative = path.relative(root, full).split(path.sep).join("/");
   if (!isInside(root, full) || !relative || relative === ".git" || relative.startsWith(".git/")) {
     throw new Error(`Expected a file or directory inside the repository: ${value}`);
   }

@@ -10,9 +10,16 @@ The executable is also a Git extension: `git-focus ...` and `git focus ...` are 
 
 Green marks the selected project, blue marks source pulled in through local dependencies, and gold marks AI context and cache paths retained by `.gitignore-focus-whitelist`. Faded paths are hidden from the working tree, not deleted; switching back to full mode makes them visible again.
 
-## Install from GitHub
+## Install
 
 Requires Node.js 20+.
+
+```text
+npm install -g git-focus
+git-focus install-skill
+```
+
+Alternatively, install the committed bundle from GitHub:
 
 ```text
 npm install -g git+https://github.com/iXab3r/git-focus.git

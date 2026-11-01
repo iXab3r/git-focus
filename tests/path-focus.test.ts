@@ -103,6 +103,28 @@ describe("path selection", () => {
     expect(f.exists(".agents/rules.md")).toBe(true);
   });
 
+  it("keeps linked worktree focus independent of the primary checkout", async () => {
+    const f = fixture();
+    const linked = new TemporaryDirectory(); temps.push(linked);
+    runGit(f.temp.path, "worktree", "add", "--detach", linked.path);
+    await f.service.applyPaths(await f.service.planPaths(linked.path, ["src/App"], false), false);
+    expect(fs.existsSync(path.join(linked.path, "src/App/source.txt"))).toBe(false);
+    expect(f.exists("src/App/source.txt")).toBe(true);
+    expect((await f.service.getStatus(f.temp.path)).isFocused).toBe(false);
+    await f.service.restoreFull(linked.path);
+    expect(fs.existsSync(path.join(linked.path, "src/App/source.txt"))).toBe(true);
+  });
+
+  it.skipIf(process.platform === "win32")("treats Unix backslashes as literal filename characters", async () => {
+    const f = fixture();
+    write(f.temp.path, "literal\\name.txt", "literal");
+    write(f.temp.path, "literal/name.txt", "sibling");
+    runGit(f.temp.path, "add", "."); runGit(f.temp.path, "commit", "-m", "literal paths");
+    await f.apply(false, "literal\\name.txt");
+    expect(f.exists("literal\\name.txt")).toBe(false);
+    expect(f.exists("literal/name.txt")).toBe(true);
+  });
+
   it("dry-run CLI accepts several paths and writes neither state nor sparse patterns", () => {
     const f = fixture();
     const output = execFileSync(process.execPath, [path.resolve("dist/cli.js"), "exclude", "src/App", "src/Lib", "--repo", f.temp.path, "--dry-run"], { encoding: "utf8" });
