@@ -3,10 +3,15 @@
 Project: `EyeAuras_GitFocus`, job: `EyeAuras_GitFocus_Release`.
 The manual job checks out the public Git root `EyeAuras_GitFocus_Repo`
 (`https://github.com/iXab3r/git-focus.git`, `refs/heads/main`) on a Linux agent
-with Node.js 20+, npm and Cargo. Its command-line step runs:
+with Docker. Its command-line step uses `node:22-bookworm` and runs:
 
 ```sh
 set -eu
+export PATH="$HOME/.cargo/bin:$PATH"
+if ! command -v cargo >/dev/null 2>&1; then
+  curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/git-focus-rustup.sh
+  sh /tmp/git-focus-rustup.sh -y --profile minimal --default-toolchain stable
+fi
 node --version
 npm --version
 cargo --version
