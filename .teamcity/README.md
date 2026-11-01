@@ -1,7 +1,8 @@
 # TeamCity release
 
-Project: `EyeAuras_GitFocus`, job: `EyeAuras_GitFocus_Release`.
-The manual job checks out the public Git root `EyeAuras_GitFocus_Repo`
+Project: `EyeAuras_GitFocus`. Verification job: `EyeAuras_GitFocus_Release`;
+publication job: `EyeAuras_GitFocus_NpmRelease`.
+Both manual jobs check out the public Git root `EyeAuras_GitFocus_Repo`
 (`https://github.com/iXab3r/git-focus.git`, `refs/heads/main`) on a Linux agent
 with Docker. Its command-line step uses `node:22-bookworm` and runs:
 
@@ -19,21 +20,29 @@ node scripts/release.mjs
 ```
 
 No automatic publication trigger is configured. `env.RELEASE_MODE` defaults to
-`dry-run`. Configure a **password** parameter `env.NPM_TOKEN` restricted to
-publishing the npm package `git-focus` before a real release. Never put its value
-in a plain CLI parameter, command line, repository or log. Updating protected
+`dry-run`. The publication job has a **password** parameter `npm.token` and an
+`env.NPM_TOKEN` reference to it, copied server-side from the existing CLI Factory
+release job with explicit authorization. The token value stays protected;
+never put it in a plain CLI parameter, command line, repository or log. Updating protected
 parameters through teamcity-cli requires its `Credentials` permission; do not
 change permissions merely to bypass a denied command.
 
 Queue verification through the authenticated teamcity-cli profile:
 
 ```sh
-teamcity-cli jobs run EyeAuras_GitFocus_Release --branch main \
+teamcity-cli jobs run EyeAuras_GitFocus_Release \
   --param env.RELEASE_REVISION=<full-main-SHA> --param env.RELEASE_MODE=dry-run
 ```
 
-For publication use the same command with `env.RELEASE_MODE=publish` after
-verification. Commit the new package.json/package-lock.json version first.
+For publication after verification:
+
+```sh
+teamcity-cli jobs run EyeAuras_GitFocus_NpmRelease \
+  --param env.RELEASE_REVISION=<full-main-SHA> --param env.RELEASE_MODE=publish
+```
+
+Omit `--branch` to select the configured default `refs/heads/main`.
+Commit the new package.json/package-lock.json version first.
 The script rejects a different checkout SHA, and publication additionally
 requires the current remote main. It runs clean-install, typecheck, bundle,
 tests, committed-bundle comparison, pack and installed-bin smoke checks.
