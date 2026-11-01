@@ -18,6 +18,12 @@
 - Never remove ignored build caches such as `target/`, `bin/`, or `obj/` when changing focus.
 - Fail before applying sparse checkout if any planned repository has staged, modified, or untracked files. Only an explicit `--force` bypasses this gate.
 
+## Independent architecture and review
+
+Start each delegated architect, advisor, and reviewer with empty conversation context (`fork_turns="none"` with `spawn_agent`, or the equivalent fresh-context mode). Give only the concrete question, repository path and relevant revisions, scope, constraints, and evidence locations. Do not carry over the author's reasoning, preferred verdict, or other agents' conclusions.
+
+Each agent must inspect the relevant implementation and contracts independently, gather its own evidence, and state conclusions and uncertainty. Keep the assignment narrowly focused on the actual topic. The final reviewer must be separate from the implementer and design advisor and inspect the final diff at the named revision. Disclose unavailable independent review rather than presenting self-review as independent.
+
 ## Verification
 
 Run `npm run typecheck`, `npm test`, and `npm run bundle` before committing.
