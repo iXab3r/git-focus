@@ -6,22 +6,12 @@ staging job: `EyeAuras_GitFocus_NpmRelease`. Both check out the public Git root
 `EyeAuras_GitFocus_Repo` (`https://github.com/iXab3r/git-focus.git`,
 `refs/heads/main`). No automatic publication trigger is configured.
 
-The Linux Docker runner uses Node 22 (at least 22.14.0), npm **11.21.1**,
-and Cargo. Install npm inside the job container, not globally on the workstation:
+The Linux Docker runner uses `node:22-bookworm` (at least Node 22.14.0),
+npm **11.21.1**, and Cargo. The versioned runner installs npm inside the job
+container, not globally on the workstation. Its TeamCity command-line step is:
 
 ```sh
-set -eu
-trap 'if [ -f release-artifacts/evidence.json ]; then echo "##teamcity[publishArtifacts '\''release-artifacts => release'\'']"; fi' EXIT
-export PATH="$HOME/.cargo/bin:$PATH"
-if ! command -v cargo >/dev/null 2>&1; then
-  curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/git-focus-rustup.sh
-  sh /tmp/git-focus-rustup.sh -y --profile minimal --default-toolchain stable
-fi
-npm install --global npm@11.21.1
-node --version
-npm --version
-cargo --version
-node scripts/release.mjs
+sh .teamcity/run-release.sh
 ```
 
 ## Credential and first registration
